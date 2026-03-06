@@ -18,6 +18,18 @@ const appFirebase = initializeApp(firebaseConfig);
 const auth = getAuth(appFirebase);
 const bd = getFirestore(appFirebase);
 
+// Funciones ayudantes para formatear los Guaraníes con puntos
+const formatearGuaranies = (valor) => {
+    if (valor === undefined || valor === null || valor === '') return '';
+    const soloNumeros = valor.toString().replace(/\D/g, ''); // Quita todo lo que no sea número
+    return soloNumeros.replace(/\B(?=(\d{3})+(?!\d))/g, "."); // Agrega el punto cada 3 ceros
+};
+
+const desformatearGuaranies = (valor) => {
+    if (valor === undefined || valor === null || valor === '') return 0;
+    return parseFloat(valor.toString().replace(/\./g, '')) || 0; // Quita los puntos para calcular
+};
+
 // --- COMPONENTE: Calendario Visual ---
 const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccionada }) => {
     const [fechaVista, setFechaVista] = useState(new Date());
@@ -112,7 +124,7 @@ export default function App() {
     const generarId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
 
     useEffect(() => {
-        // Autenticación mejorada: solo intenta loguear si no hay usuario guardado
+        // Autenticación mejorada
         const desuscribir = onAuthStateChanged(auth, (user) => {
             if (user) {
                 setUsuario(user);
@@ -131,7 +143,6 @@ export default function App() {
         if (!usuario) return;
 
         try {
-            // AHORA TODOS LEEN DE LA MISMA CARPETA GLOBAL: 'gruposEnvio'
             const referenciaGrupos = collection(bd, 'gruposEnvio');
 
             const desuscribir = onSnapshot(referenciaGrupos, (instantanea) => {
@@ -166,13 +177,12 @@ export default function App() {
         try {
             const nuevoGrupo = {
                 fecha: nuevaFecha,
-                costoEnvioTotal: parseFloat(nuevoCostoEnvio),
+                costoEnvioTotal: desformatearGuaranies(nuevoCostoEnvio), // Guardamos el número limpio en la BD
                 pesoTotal: parseFloat(nuevoPesoTotal),
                 productos: [],
                 creadoPor: usuario.uid
             };
 
-            // Guardando en la carpeta global
             const nuevaReferencia = doc(collection(bd, 'gruposEnvio'));
             await setDoc(nuevaReferencia, nuevoGrupo);
 
@@ -200,7 +210,7 @@ export default function App() {
         setEditandoGrupo(grupo.id);
         setGrupoEditado({
             fecha: grupo.fecha,
-            costoEnvioTotal: grupo.costoEnvioTotal,
+            costoEnvioTotal: formatearGuaranies(grupo.costoEnvioTotal), // Le ponemos puntos al cargar para editar
             pesoTotal: grupo.pesoTotal
         });
     };
@@ -209,7 +219,7 @@ export default function App() {
         if (!usuario) return;
         try {
             const grupoActual = grupos.find(g => g.id === idGrupo);
-            const nuevoCostoEnvio = parseFloat(grupoEditado.costoEnvioTotal);
+            const nuevoCostoEnvio = desformatearGuaranies(grupoEditado.costoEnvioTotal);
             const nuevoPesoTotal = parseFloat(grupoEditado.pesoTotal);
 
             const productosActualizados = grupoActual.productos.map(p => {
@@ -243,7 +253,7 @@ export default function App() {
 
         try {
             const grupo = grupos.find(g => g.id === idGrupo);
-            const precio = parseFloat(form.precio);
+            const precio = desformatearGuaranies(form.precio); // Limpiamos los puntos
             const peso = parseFloat(form.peso);
 
             const costoEnvioCalculado = (peso * grupo.costoEnvioTotal) / grupo.pesoTotal;
@@ -286,7 +296,7 @@ export default function App() {
         setEditandoProducto(producto.id);
         setProductoEditado({
             nombre: producto.nombre,
-            precio: producto.precio,
+            precio: formatearGuaranies(producto.precio), // Con puntos para mostrar
             peso: producto.peso
         });
     };
@@ -295,7 +305,7 @@ export default function App() {
         if (!usuario) return;
         try {
             const grupoActual = grupos.find(g => g.id === idGrupo);
-            const precio = parseFloat(productoEditado.precio);
+            const precio = desformatearGuaranies(productoEditado.precio); // Sin puntos para guardar
             const peso = parseFloat(productoEditado.peso);
 
             const costoEnvioCalculado = (peso * grupoActual.costoEnvioTotal) / grupoActual.pesoTotal;
@@ -330,9 +340,12 @@ export default function App() {
     }, [grupos, filtroFecha]);
 
     const cambiarProductoFormulario = (idGrupo, campo, valor) => {
+        // Si el campo es precio, aplicamos el formateo en tiempo real
+        const nuevoValor = campo === 'precio' ? formatearGuaranies(valor) : valor;
+
         setProductoFormulario(prev => ({
             ...prev,
-            [idGrupo]: { ...prev[idGrupo], [campo]: valor }
+            [idGrupo]: { ...prev[idGrupo], [campo]: nuevoValor }
         }));
     };
 
@@ -340,7 +353,8 @@ export default function App() {
         return [...new Set(grupos.map(g => g.fecha))];
     }, [grupos]);
 
-    const totalConvertido = (parseFloat(cotizacionDolar) || 0) * (parseFloat(cantidadDolar) || 0);
+    // Usamos la función de desformatear para calcular matemáticamente
+    const totalConvertido = desformatearGuaranies(cotizacionDolar) * (parseFloat(cantidadDolar) || 0);
 
     return (
         <div className="min-h-screen bg-pink-50/50 p-3 sm:p-5 md:p-8 font-sans text-slate-700 pb-20">
@@ -374,10 +388,11 @@ export default function App() {
                                 <div>
                                     <label className="text-[10px] md:text-xs font-bold text-slate-400 ml-2 uppercase">Cambio BCP/Banco</label>
                                     <input
-                                        type="number"
+                                        type="text"
+                                        inputMode="numeric"
                                         value={cotizacionDolar}
-                                        onChange={(e) => setCotizacionDolar(e.target.value)}
-                                        placeholder="Ej. 7300"
+                                        onChange={(e) => setCotizacionDolar(formatearGuaranies(e.target.value))}
+                                        placeholder="Ej. 7.300"
                                         className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                     />
                                 </div>
@@ -443,11 +458,12 @@ export default function App() {
                                     />
                                 </div>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     placeholder="Costo Total Envío (₲)"
                                     required
                                     value={nuevoCostoEnvio}
-                                    onChange={(e) => setNuevoCostoEnvio(e.target.value)}
+                                    onChange={(e) => setNuevoCostoEnvio(formatearGuaranies(e.target.value))}
                                     className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                 />
                                 <input
@@ -498,11 +514,12 @@ export default function App() {
                                                 onChange={(e) => setGrupoEditado({...grupoEditado, fecha: e.target.value})}
                                             />
                                             <input
-                                                type="number"
+                                                type="text"
+                                                inputMode="numeric"
                                                 placeholder="Envío total (₲)"
                                                 className="w-full px-3 py-2 bg-white border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600 shadow-sm"
                                                 value={grupoEditado.costoEnvioTotal}
-                                                onChange={(e) => setGrupoEditado({...grupoEditado, costoEnvioTotal: e.target.value})}
+                                                onChange={(e) => setGrupoEditado({...grupoEditado, costoEnvioTotal: formatearGuaranies(e.target.value)})}
                                             />
                                             <input
                                                 type="number"
@@ -566,7 +583,8 @@ export default function App() {
                                         </div>
                                         <div className="col-span-1 sm:col-span-3">
                                             <input
-                                                type="number"
+                                                type="text"
+                                                inputMode="numeric"
                                                 placeholder="Precio (₲)"
                                                 className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.precio || ''}
@@ -612,11 +630,12 @@ export default function App() {
                                                     </div>
                                                     <div className="col-span-1 sm:col-span-3">
                                                         <input
-                                                            type="number"
+                                                            type="text"
+                                                            inputMode="numeric"
                                                             className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
                                                             value={productoEditado.precio}
-                                                            onChange={(e) => setProductoEditado({...productoEditado, precio: e.target.value})}
-                                                            placeholder="Precio"
+                                                            onChange={(e) => setProductoEditado({...productoEditado, precio: formatearGuaranies(e.target.value)})}
+                                                            placeholder="Precio (₲)"
                                                         />
                                                     </div>
                                                     <div className="col-span-1 sm:col-span-2">
@@ -626,7 +645,7 @@ export default function App() {
                                                             className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
                                                             value={productoEditado.peso}
                                                             onChange={(e) => setProductoEditado({...productoEditado, peso: e.target.value})}
-                                                            placeholder="Peso"
+                                                            placeholder="Peso (kg)"
                                                         />
                                                     </div>
                                                     <div className="col-span-2 sm:col-span-2 flex gap-1 justify-end items-center mt-2 sm:mt-0">
@@ -648,10 +667,10 @@ export default function App() {
                                 📦 {p.peso}kg
                               </span>
                                                             <span className="text-[11px] md:text-xs bg-blue-50 px-2 py-1 rounded-md text-blue-600 font-medium border border-blue-100">
-                                🏷️ Compra: ₲{p.precio.toLocaleString()}
+                                🏷️ Compra: ₲{p.precio.toLocaleString('es-PY')}
                               </span>
                                                             <span className="text-[11px] md:text-xs bg-orange-50 px-2 py-1 rounded-md text-orange-600 font-medium border border-orange-100">
-                                ✈️ Envío: ₲{Math.round(p.costoEnvioCalculado || 0).toLocaleString()}
+                                ✈️ Envío: ₲{Math.round(p.costoEnvioCalculado || 0).toLocaleString('es-PY')}
                               </span>
                                                         </div>
                                                     </div>
@@ -659,7 +678,7 @@ export default function App() {
                                                     <div className="flex items-center justify-between w-full sm:w-auto gap-3 border-t border-pink-50 sm:border-t-0 pt-3 sm:pt-0">
                                                         <div className="text-left sm:text-right flex-1 sm:flex-none">
                                                             <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">Costo Final</p>
-                                                            <p className="text-lg md:text-xl font-black text-pink-500">₲{Math.round(p.costoRealFinal).toLocaleString()}</p>
+                                                            <p className="text-lg md:text-xl font-black text-pink-500">₲{Math.round(p.costoRealFinal).toLocaleString('es-PY')}</p>
                                                         </div>
                                                         <div className="flex gap-1 shrink-0">
                                                             <button
