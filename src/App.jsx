@@ -1,15 +1,23 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Plus, Calendar, Package, Cherry, Loader2, Trash2, Info } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 
-// Configuración de Firebase
-const firebaseConfig = JSON.parse(__firebase_config);
+// ⚠️ ¡IMPORTANTE! REEMPLAZA ESTOS DATOS CON LOS DE TU PROYECTO DE FIREBASE ⚠️
+// Los encuentras en Firebase > Engranaje ⚙️ > Configuración del proyecto > Tus apps
+const firebaseConfig = {
+    apiKey: "AIzaSyAwtQohg4WLlzd1ZZiDHVKy5KjARPqtMRw",
+    authDomain: "TU_PROYECTO.firebaseapp.com",
+    projectId: "TU_PROYECTO",
+    storageBucket: "TU_PROYECTO.appspot.com",
+    messagingSenderId: "TU_MESSAGING_SENDER_ID",
+    appId: "TU_APP_ID"
+};
+
 const appFirebase = initializeApp(firebaseConfig);
 const auth = getAuth(appFirebase);
 const bd = getFirestore(appFirebase);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'cherriecute-default';
 
 export default function App() {
     // Estados de la aplicación
@@ -24,13 +32,13 @@ export default function App() {
     const [nuevoPesoTotal, setNuevoPesoTotal] = useState('');
     const [productoFormulario, setProductoFormulario] = useState({});
 
-    // Autenticación inicial
+    // Autenticación inicial (Anónima)
     useEffect(() => {
         const iniciarAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
+            try {
                 await signInAnonymously(auth);
+            } catch (error) {
+                console.error("Error al iniciar sesión:", error);
             }
         };
         iniciarAuth();
@@ -45,7 +53,8 @@ export default function App() {
     useEffect(() => {
         if (!usuario) return;
 
-        const referenciaGrupos = collection(bd, 'artifacts', appId, 'public', 'data', 'gruposEnvio');
+        // Ruta segura configurada en las reglas de Firebase: usuarios/{usuario.uid}/gruposEnvio
+        const referenciaGrupos = collection(bd, 'usuarios', usuario.uid, 'gruposEnvio');
 
         const desuscribir = onSnapshot(referenciaGrupos, (instantanea) => {
             const gruposCargados = [];
@@ -78,7 +87,7 @@ export default function App() {
         };
 
         const idNuevoGrupo = crypto.randomUUID();
-        const referenciaDoc = doc(bd, 'artifacts', appId, 'public', 'data', 'gruposEnvio', idNuevoGrupo);
+        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idNuevoGrupo);
         await setDoc(referenciaDoc, nuevoGrupo);
 
         setNuevaFecha('');
@@ -88,11 +97,11 @@ export default function App() {
 
     const borrarGrupo = async (id) => {
         if (!usuario) return;
-        const referenciaDoc = doc(bd, 'artifacts', appId, 'public', 'data', 'gruposEnvio', id);
+        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', id);
         await deleteDoc(referenciaDoc);
     };
 
-    // Manejadores de Productos
+    // Manejadores de Productos (Ej: Tus audífonos Sony o cargador Anker)
     const agregarProducto = async (idGrupo, e) => {
         e.preventDefault();
         const form = productoFormulario[idGrupo];
@@ -116,7 +125,7 @@ export default function App() {
         };
 
         const nuevosProductos = [...grupo.productos, nuevoProducto];
-        const referenciaDoc = doc(bd, 'artifacts', appId, 'public', 'data', 'gruposEnvio', idGrupo);
+        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
         await updateDoc(referenciaDoc, { productos: nuevosProductos });
 
         setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '' } }));
@@ -127,7 +136,7 @@ export default function App() {
         const grupo = grupos.find(g => g.id === idGrupo);
         const nuevosProductos = grupo.productos.filter(p => p.id !== idProducto);
 
-        const referenciaDoc = doc(bd, 'artifacts', appId, 'public', 'data', 'gruposEnvio', idGrupo);
+        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
         await updateDoc(referenciaDoc, { productos: nuevosProductos });
     };
 
@@ -241,7 +250,7 @@ export default function App() {
                                 <div className="bg-pink-500 p-4 md:p-5 flex flex-wrap justify-between items-center gap-3">
                                     <div className="flex items-center gap-3 text-white">
                                         <Calendar size={20} />
-                                        <span className="font-bold text-lg">{new Date(grupo.fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                                        <span className="font-bold text-lg">{new Date(grupo.fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
                                     </div>
                                     <div className="flex items-center gap-3 bg-pink-600/30 px-4 py-2 rounded-full border border-pink-400/50">
                     <span className="text-white text-xs md:text-sm font-bold">
