@@ -4,10 +4,9 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 
-// ⚠️ ¡IMPORTANTE! REEMPLAZA ESTOS DATOS CON LOS DE TU PROYECTO DE FIREBASE ⚠️
-// Los encuentras en Firebase > Engranaje ⚙️ > Configuración del proyecto > Tus apps
+// ⚠️ ¡IMPORTANTE! VUELVE A PONER TUS DATOS DE FIREBASE AQUÍ ⚠️
 const firebaseConfig = {
-    apiKey: "AIzaSyAwtQohg4WLlzd1ZZiDHVKy5KjARPqtMRw",
+    apiKey: "TU_API_KEY",
     authDomain: "TU_PROYECTO.firebaseapp.com",
     projectId: "TU_PROYECTO",
     storageBucket: "TU_PROYECTO.appspot.com",
@@ -20,126 +19,150 @@ const auth = getAuth(appFirebase);
 const bd = getFirestore(appFirebase);
 
 export default function App() {
-    // Estados de la aplicación
     const [usuario, setUsuario] = useState(null);
     const [cargando, setCargando] = useState(true);
     const [grupos, setGrupos] = useState([]);
     const [filtroFecha, setFiltroFecha] = useState('');
 
-    // Estados para nuevos registros
     const [nuevaFecha, setNuevaFecha] = useState('');
     const [nuevoCostoEnvio, setNuevoCostoEnvio] = useState('');
     const [nuevoPesoTotal, setNuevoPesoTotal] = useState('');
     const [productoFormulario, setProductoFormulario] = useState({});
 
-    // Autenticación inicial (Anónima)
+    // Generador de ID seguro
+    const generarId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
+
     useEffect(() => {
         const iniciarAuth = async () => {
             try {
                 await signInAnonymously(auth);
             } catch (error) {
                 console.error("Error al iniciar sesión:", error);
-                setCargando(false); // Detenemos la carga si hay un error
+                alert("Error de conexión con Firebase Auth: " + error.message);
+                setCargando(false);
             }
         };
         iniciarAuth();
 
         const desuscribir = onAuthStateChanged(auth, (user) => {
             setUsuario(user);
-            if (!user) setCargando(false); // Detenemos la carga si no hay usuario
+            if (!user) setCargando(false);
         });
         return () => desuscribir();
     }, []);
 
-    // Escuchar cambios en Firestore
     useEffect(() => {
         if (!usuario) return;
 
-        // Ruta segura configurada en las reglas de Firebase: usuarios/{usuario.uid}/gruposEnvio
-        const referenciaGrupos = collection(bd, 'usuarios', usuario.uid, 'gruposEnvio');
+        try {
+            const referenciaGrupos = collection(bd, 'usuarios', usuario.uid, 'gruposEnvio');
 
-        const desuscribir = onSnapshot(referenciaGrupos, (instantanea) => {
-            const gruposCargados = [];
-            instantanea.forEach((documento) => {
-                gruposCargados.push({ id: documento.id, ...documento.data() });
+            const desuscribir = onSnapshot(referenciaGrupos, (instantanea) => {
+                const gruposCargados = [];
+                instantanea.forEach((documento) => {
+                    gruposCargados.push({ id: documento.id, ...documento.data() });
+                });
+                gruposCargados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+                setGrupos(gruposCargados);
+                setCargando(false);
+            }, (error) => {
+                console.error("Error al leer datos:", error);
+                alert("Error al intentar leer tus datos: " + error.message);
+                setCargando(false);
             });
-            // Ordenar por fecha descendente
-            gruposCargados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-            setGrupos(gruposCargados);
-            setCargando(false);
-        }, (error) => {
-            console.error("Error al leer datos:", error);
-            setCargando(false);
-        });
 
-        return () => desuscribir();
+            return () => desuscribir();
+        } catch (error) {
+            alert("Error crítico al conectar con la base de datos: " + error.message);
+            setCargando(false);
+        }
     }, [usuario]);
 
-    // Manejadores de Grupos
+    // Manejadores de Grupos con Alertas de Error
     const agregarGrupo = async (e) => {
         e.preventDefault();
-        if (!nuevaFecha || !nuevoCostoEnvio || !nuevoPesoTotal || !usuario) return;
+        if (!nuevaFecha || !nuevoCostoEnvio || !nuevoPesoTotal || !usuario) {
+            alert("Por favor completa todos los campos del grupo.");
+            return;
+        }
 
-        const nuevoGrupo = {
-            fecha: nuevaFecha,
-            costoEnvioTotal: parseFloat(nuevoCostoEnvio),
-            pesoTotal: parseFloat(nuevoPesoTotal),
-            productos: [],
-            creadoPor: usuario.uid
-        };
+        try {
+            const nuevoGrupo = {
+                fecha: nuevaFecha,
+                costoEnvioTotal: parseFloat(nuevoCostoEnvio),
+                pesoTotal: parseFloat(nuevoPesoTotal),
+                productos: [],
+                creadoPor: usuario.uid
+            };
 
-        const idNuevoGrupo = crypto.randomUUID();
-        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idNuevoGrupo);
-        await setDoc(referenciaDoc, nuevoGrupo);
+            // Usamos doc() de Firebase para crear una referencia segura
+            const nuevaReferencia = doc(collection(bd, 'usuarios', usuario.uid, 'gruposEnvio'));
+            await setDoc(nuevaReferencia, nuevoGrupo);
 
-        setNuevaFecha('');
-        setNuevoCostoEnvio('');
-        setNuevoPesoTotal('');
+            setNuevaFecha('');
+            setNuevoCostoEnvio('');
+            setNuevoPesoTotal('');
+        } catch (error) {
+            console.error("Error al guardar grupo:", error);
+            alert("No se pudo guardar el grupo. Firebase dice: " + error.message);
+        }
     };
 
     const borrarGrupo = async (id) => {
         if (!usuario) return;
-        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', id);
-        await deleteDoc(referenciaDoc);
+        try {
+            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', id);
+            await deleteDoc(referenciaDoc);
+        } catch (error) {
+            alert("Error al borrar el grupo: " + error.message);
+        }
     };
 
-    // Manejadores de Productos (Ej: Tus audífonos Sony o cargador Anker)
+    // Manejadores de Productos con Alertas de Error
     const agregarProducto = async (idGrupo, e) => {
         e.preventDefault();
         const form = productoFormulario[idGrupo];
         if (!form || !form.nombre || !form.precio || !form.peso || !usuario) return;
 
-        const grupo = grupos.find(g => g.id === idGrupo);
-        const precio = parseFloat(form.precio);
-        const peso = parseFloat(form.peso);
+        try {
+            const grupo = grupos.find(g => g.id === idGrupo);
+            const precio = parseFloat(form.precio);
+            const peso = parseFloat(form.peso);
 
-        // Regla de tres: (Peso del producto * Costo total envío) / Peso total envío
-        const costoEnvioCalculado = (peso * grupo.costoEnvioTotal) / grupo.pesoTotal;
-        const costoRealFinal = precio + costoEnvioCalculado;
+            const costoEnvioCalculado = (peso * grupo.costoEnvioTotal) / grupo.pesoTotal;
+            const costoRealFinal = precio + costoEnvioCalculado;
 
-        const nuevoProducto = {
-            id: crypto.randomUUID(),
-            nombre: form.nombre,
-            precio: precio,
-            peso: peso,
-            costoEnvioCalculado: costoEnvioCalculado,
-            costoRealFinal: costoRealFinal
-        };
+            const nuevoProducto = {
+                id: generarId(),
+                nombre: form.nombre,
+                precio: precio,
+                peso: peso,
+                costoEnvioCalculado: costoEnvioCalculado,
+                costoRealFinal: costoRealFinal
+            };
 
-        const nuevosProductos = [...grupo.productos, nuevoProducto];
-        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
-        await updateDoc(referenciaDoc, { productos: nuevosProductos });
+            const nuevosProductos = [...grupo.productos, nuevoProducto];
+            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
+            await updateDoc(referenciaDoc, { productos: nuevosProductos });
 
-        setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '' } }));
+            setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '' } }));
+        } catch (error) {
+            console.error("Error al guardar producto:", error);
+            alert("No se pudo guardar el producto. Firebase dice: " + error.message);
+        }
     };
 
     const borrarProducto = async (idGrupo, idProducto) => {
         if (!usuario) return;
-        const grupo = grupos.find(g => g.id === idGrupo);
-        const nuevosProductos = grupo.productos.filter(p => p.id !== idProducto);
+        try {
+            const grupo = grupos.find(g => g.id === idGrupo);
+            const nuevosProductos = grupo.productos.filter(p => p.id !== idProducto);
 
-        const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
-        await updateDoc(referenciaDoc, { productos: nuevosProductos });
+            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
+            await updateDoc(referenciaDoc, { productos: nuevosProductos });
+        } catch (error) {
+            alert("Error al borrar el producto: " + error.message);
+        }
     };
 
     const gruposFiltrados = useMemo(() => {
