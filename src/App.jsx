@@ -7,11 +7,11 @@ import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc
 // ⚠️ ¡IMPORTANTE! VUELVE A PONER TUS DATOS DE FIREBASE AQUÍ ⚠️
 const firebaseConfig = {
     apiKey: "AIzaSyAwtQohg4WLlzd1ZZiDHVKy5KjARPqtMRw",
-    authDomain: "TU_PROYECTO.firebaseapp.com",
-    projectId: "TU_PROYECTO",
-    storageBucket: "TU_PROYECTO.appspot.com",
-    messagingSenderId: "TU_MESSAGING_SENDER_ID",
-    appId: "TU_APP_ID"
+    authDomain: "cherriecute.firebaseapp.com",
+    projectId: "cherriecute",
+    storageBucket: "cherriecute.firebasestorage.app",
+    messagingSenderId: "502993302971",
+    appId: "G-M85Q4GCQCC"
 };
 
 const appFirebase = initializeApp(firebaseConfig);
