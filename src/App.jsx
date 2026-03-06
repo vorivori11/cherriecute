@@ -21,13 +21,13 @@ const bd = getFirestore(appFirebase);
 // Funciones ayudantes para formatear los Guaraníes con puntos
 const formatearGuaranies = (valor) => {
     if (valor === undefined || valor === null || valor === '') return '';
-    const soloNumeros = valor.toString().replace(/\D/g, ''); // Quita todo lo que no sea número
-    return soloNumeros.replace(/\B(?=(\d{3})+(?!\d))/g, "."); // Agrega el punto cada 3 ceros
+    const soloNumeros = valor.toString().replace(/\D/g, '');
+    return soloNumeros.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 };
 
 const desformatearGuaranies = (valor) => {
     if (valor === undefined || valor === null || valor === '') return 0;
-    return parseFloat(valor.toString().replace(/\./g, '')) || 0; // Quita los puntos para calcular
+    return parseFloat(valor.toString().replace(/\./g, '')) || 0;
 };
 
 // --- COMPONENTE: Calendario Visual ---
@@ -177,7 +177,7 @@ export default function App() {
         try {
             const nuevoGrupo = {
                 fecha: nuevaFecha,
-                costoEnvioTotal: desformatearGuaranies(nuevoCostoEnvio), // Guardamos el número limpio en la BD
+                costoEnvioTotal: desformatearGuaranies(nuevoCostoEnvio),
                 pesoTotal: parseFloat(nuevoPesoTotal),
                 productos: [],
                 creadoPor: usuario.uid
@@ -210,7 +210,7 @@ export default function App() {
         setEditandoGrupo(grupo.id);
         setGrupoEditado({
             fecha: grupo.fecha,
-            costoEnvioTotal: formatearGuaranies(grupo.costoEnvioTotal), // Le ponemos puntos al cargar para editar
+            costoEnvioTotal: formatearGuaranies(grupo.costoEnvioTotal),
             pesoTotal: grupo.pesoTotal
         });
     };
@@ -253,8 +253,10 @@ export default function App() {
 
         try {
             const grupo = grupos.find(g => g.id === idGrupo);
-            const precio = desformatearGuaranies(form.precio); // Limpiamos los puntos
+            const precio = desformatearGuaranies(form.precio);
             const peso = parseFloat(form.peso);
+            const cantidad = parseInt(form.cantidad) || 1;
+            const ganancia = parseFloat(form.ganancia) || 0;
 
             const costoEnvioCalculado = (peso * grupo.costoEnvioTotal) / grupo.pesoTotal;
             const costoRealFinal = precio + costoEnvioCalculado;
@@ -264,6 +266,8 @@ export default function App() {
                 nombre: form.nombre,
                 precio: precio,
                 peso: peso,
+                cantidad: cantidad,
+                porcentajeGanancia: ganancia,
                 costoEnvioCalculado: costoEnvioCalculado,
                 costoRealFinal: costoRealFinal
             };
@@ -272,7 +276,7 @@ export default function App() {
             const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
             await updateDoc(referenciaDoc, { productos: nuevosProductos });
 
-            setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '' } }));
+            setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '', cantidad: '', ganancia: '' } }));
         } catch (error) {
             console.error("Error al guardar producto:", error);
             alert("No se pudo guardar el producto. Firebase dice: " + error.message);
@@ -296,8 +300,10 @@ export default function App() {
         setEditandoProducto(producto.id);
         setProductoEditado({
             nombre: producto.nombre,
-            precio: formatearGuaranies(producto.precio), // Con puntos para mostrar
-            peso: producto.peso
+            precio: formatearGuaranies(producto.precio),
+            peso: producto.peso,
+            cantidad: producto.cantidad || 1,
+            ganancia: producto.porcentajeGanancia || 0
         });
     };
 
@@ -305,8 +311,10 @@ export default function App() {
         if (!usuario) return;
         try {
             const grupoActual = grupos.find(g => g.id === idGrupo);
-            const precio = desformatearGuaranies(productoEditado.precio); // Sin puntos para guardar
+            const precio = desformatearGuaranies(productoEditado.precio);
             const peso = parseFloat(productoEditado.peso);
+            const cantidad = parseInt(productoEditado.cantidad) || 1;
+            const ganancia = parseFloat(productoEditado.ganancia) || 0;
 
             const costoEnvioCalculado = (peso * grupoActual.costoEnvioTotal) / grupoActual.pesoTotal;
             const costoRealFinal = precio + costoEnvioCalculado;
@@ -318,6 +326,8 @@ export default function App() {
                         nombre: productoEditado.nombre,
                         precio: precio,
                         peso: peso,
+                        cantidad: cantidad,
+                        porcentajeGanancia: ganancia,
                         costoEnvioCalculado: costoEnvioCalculado,
                         costoRealFinal: costoRealFinal
                     };
@@ -340,7 +350,6 @@ export default function App() {
     }, [grupos, filtroFecha]);
 
     const cambiarProductoFormulario = (idGrupo, campo, valor) => {
-        // Si el campo es precio, aplicamos el formateo en tiempo real
         const nuevoValor = campo === 'precio' ? formatearGuaranies(valor) : valor;
 
         setProductoFormulario(prev => ({
@@ -353,7 +362,6 @@ export default function App() {
         return [...new Set(grupos.map(g => g.fecha))];
     }, [grupos]);
 
-    // Usamos la función de desformatear para calcular matemáticamente
     const totalConvertido = desformatearGuaranies(cotizacionDolar) * (parseFloat(cantidadDolar) || 0);
 
     return (
@@ -570,23 +578,23 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {/* Formulario de Producto Nuevo */}
+                                {/* Formulario de Producto Nuevo (Ahora con Cantidad y Ganancia) */}
                                 <div className="p-3 md:p-5 bg-pink-50/30 border-b border-pink-100">
                                     <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
-                                        <div className="col-span-2 sm:col-span-5">
+                                        <div className="col-span-2 sm:col-span-3">
                                             <input
                                                 placeholder="Nombre del producto"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.nombre || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'nombre', e.target.value)}
                                             />
                                         </div>
-                                        <div className="col-span-1 sm:col-span-3">
+                                        <div className="col-span-1 sm:col-span-2">
                                             <input
                                                 type="text"
                                                 inputMode="numeric"
                                                 placeholder="Precio (₲)"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.precio || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'precio', e.target.value)}
                                             />
@@ -596,15 +604,36 @@ export default function App() {
                                                 type="number"
                                                 placeholder="Peso(kg)"
                                                 step="0.001"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.peso || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'peso', e.target.value)}
                                             />
                                         </div>
-                                        <div className="col-span-2 sm:col-span-2">
-                                            <button type="submit" className="w-full py-3 bg-pink-200 text-pink-800 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm font-bold gap-2">
+                                        <div className="col-span-1 sm:col-span-2">
+                                            <input
+                                                type="number"
+                                                placeholder="Cant."
+                                                min="1"
+                                                step="1"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                value={productoFormulario[grupo.id]?.cantidad || ''}
+                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'cantidad', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="col-span-1 sm:col-span-2">
+                                            <input
+                                                type="number"
+                                                placeholder="% Ganancia"
+                                                step="0.1"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                value={productoFormulario[grupo.id]?.ganancia || ''}
+                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'ganancia', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="col-span-2 sm:col-span-1">
+                                            <button type="submit" className="w-full py-3 h-full bg-pink-200 text-pink-800 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm font-bold gap-2">
                                                 <Plus size={20} className="sm:hidden" />
-                                                <span className="sm:hidden">Agregar</span>
+                                                <span className="sm:hidden">Agregar Producto</span>
                                                 <Plus size={20} className="hidden sm:block" />
                                             </button>
                                         </div>
@@ -615,92 +644,151 @@ export default function App() {
                                 <div className="p-3 md:p-5 space-y-3">
                                     {grupo.productos.length === 0 ? (
                                         <p className="text-center text-pink-300 text-sm py-4 italic">No hay productos en este envío todavía.</p>
-                                    ) : grupo.productos.map(p => (
-                                        <div key={p.id} className="bg-white border border-pink-100 shadow-sm p-4 rounded-2xl group hover:border-pink-200 transition-colors">
-                                            {editandoProducto === p.id ? (
-                                                // MODO EDICIÓN PRODUCTO
-                                                <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
-                                                    <div className="col-span-2 sm:col-span-5">
-                                                        <input
-                                                            className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
-                                                            value={productoEditado.nombre}
-                                                            onChange={(e) => setProductoEditado({...productoEditado, nombre: e.target.value})}
-                                                            placeholder="Nombre"
-                                                        />
+                                    ) : grupo.productos.map(p => {
+                                        // --- NUEVOS CÁLCULOS UNITARIOS ---
+                                        const cantidadItem = p.cantidad || 1;
+                                        const gananciaItem = p.porcentajeGanancia || 0;
+                                        const costoUnitario = p.costoRealFinal / cantidadItem;
+                                        const precioVentaUnitario = costoUnitario * (1 + (gananciaItem / 100));
+
+                                        return (
+                                            <div key={p.id} className="bg-white border border-pink-100 shadow-sm p-4 rounded-2xl group hover:border-pink-200 transition-colors">
+                                                {editandoProducto === p.id ? (
+                                                    // MODO EDICIÓN PRODUCTO
+                                                    <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
+                                                        <div className="col-span-2 sm:col-span-3">
+                                                            <input
+                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
+                                                                value={productoEditado.nombre}
+                                                                onChange={(e) => setProductoEditado({...productoEditado, nombre: e.target.value})}
+                                                                placeholder="Nombre"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 sm:col-span-2">
+                                                            <input
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
+                                                                value={productoEditado.precio}
+                                                                onChange={(e) => setProductoEditado({...productoEditado, precio: formatearGuaranies(e.target.value)})}
+                                                                placeholder="Total (₲)"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 sm:col-span-2">
+                                                            <input
+                                                                type="number"
+                                                                step="0.001"
+                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
+                                                                value={productoEditado.peso}
+                                                                onChange={(e) => setProductoEditado({...productoEditado, peso: e.target.value})}
+                                                                placeholder="Peso Total"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 sm:col-span-2">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                step="1"
+                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
+                                                                value={productoEditado.cantidad}
+                                                                onChange={(e) => setProductoEditado({...productoEditado, cantidad: e.target.value})}
+                                                                placeholder="Cant."
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 sm:col-span-2">
+                                                            <input
+                                                                type="number"
+                                                                step="0.1"
+                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
+                                                                value={productoEditado.ganancia}
+                                                                onChange={(e) => setProductoEditado({...productoEditado, ganancia: e.target.value})}
+                                                                placeholder="% Ganancia"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-2 sm:col-span-1 flex gap-1 justify-end items-center mt-2 sm:mt-0">
+                                                            <button onClick={() => setEditandoProducto(null)} className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors flex-1 flex justify-center">
+                                                                <X size={18} />
+                                                            </button>
+                                                            <button onClick={() => guardarEdicionProducto(grupo.id, p.id)} className="p-2 bg-pink-400 text-white rounded-xl hover:bg-pink-500 transition-colors flex-1 flex justify-center shadow-sm">
+                                                                <Check size={18} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <div className="col-span-1 sm:col-span-3">
-                                                        <input
-                                                            type="text"
-                                                            inputMode="numeric"
-                                                            className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
-                                                            value={productoEditado.precio}
-                                                            onChange={(e) => setProductoEditado({...productoEditado, precio: formatearGuaranies(e.target.value)})}
-                                                            placeholder="Precio (₲)"
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-1 sm:col-span-2">
-                                                        <input
-                                                            type="number"
-                                                            step="0.001"
-                                                            className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
-                                                            value={productoEditado.peso}
-                                                            onChange={(e) => setProductoEditado({...productoEditado, peso: e.target.value})}
-                                                            placeholder="Peso (kg)"
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-2 sm:col-span-2 flex gap-1 justify-end items-center mt-2 sm:mt-0">
-                                                        <button onClick={() => setEditandoProducto(null)} className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors flex-1 flex justify-center">
-                                                            <X size={18} />
-                                                        </button>
-                                                        <button onClick={() => guardarEdicionProducto(grupo.id, p.id)} className="p-2 bg-pink-400 text-white rounded-xl hover:bg-pink-500 transition-colors flex-1 flex justify-center shadow-sm">
-                                                            <Check size={18} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                // MODO VISTA PRODUCTO
-                                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
-                                                    <div className="flex-1 min-w-0 w-full">
-                                                        <p className="font-bold text-slate-600 text-base md:text-lg truncate" title={p.nombre}>{p.nombre}</p>
-                                                        <div className="flex flex-wrap gap-2 mt-2">
+                                                ) : (
+                                                    // MODO VISTA PRODUCTO (Renovado con Mini-Dashboard)
+                                                    <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+
+                                                        {/* Detalles del Producto */}
+                                                        <div className="flex-1 min-w-0 w-full">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="font-bold text-slate-600 text-base md:text-lg truncate" title={p.nombre}>{p.nombre}</p>
+                                                                {cantidadItem > 1 && (
+                                                                    <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-bold shadow-sm">
+                                  x{cantidadItem}
+                                </span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Desglose de los Costos Totales Iniciales */}
+                                                            <div className="flex flex-wrap gap-2 mt-2">
                               <span className="text-[11px] md:text-xs bg-slate-50 px-2 py-1 rounded-md text-slate-500 font-medium border border-slate-100">
-                                📦 {p.peso}kg
+                                ⚖️ Peso Total: {p.peso}kg
                               </span>
-                                                            <span className="text-[11px] md:text-xs bg-blue-50 px-2 py-1 rounded-md text-blue-600 font-medium border border-blue-100">
+                                                                <span className="text-[11px] md:text-xs bg-blue-50 px-2 py-1 rounded-md text-blue-600 font-medium border border-blue-100">
                                 🏷️ Compra: ₲{p.precio.toLocaleString('es-PY')}
                               </span>
-                                                            <span className="text-[11px] md:text-xs bg-orange-50 px-2 py-1 rounded-md text-orange-600 font-medium border border-orange-100">
+                                                                <span className="text-[11px] md:text-xs bg-orange-50 px-2 py-1 rounded-md text-orange-600 font-medium border border-orange-100">
                                 ✈️ Envío: ₲{Math.round(p.costoEnvioCalculado || 0).toLocaleString('es-PY')}
                               </span>
+                                                                {gananciaItem > 0 && (
+                                                                    <span className="text-[11px] md:text-xs bg-green-50 px-2 py-1 rounded-md text-green-600 font-medium border border-green-100">
+                                  📈 Ganancia: {gananciaItem}%
+                                </span>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
 
-                                                    <div className="flex items-center justify-between w-full sm:w-auto gap-3 border-t border-pink-50 sm:border-t-0 pt-3 sm:pt-0">
-                                                        <div className="text-left sm:text-right flex-1 sm:flex-none">
-                                                            <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">Costo Final</p>
-                                                            <p className="text-lg md:text-xl font-black text-pink-500">₲{Math.round(p.costoRealFinal).toLocaleString('es-PY')}</p>
-                                                        </div>
-                                                        <div className="flex gap-1 shrink-0">
-                                                            <button
-                                                                onClick={() => iniciarEdicionProducto(p)}
-                                                                className="text-pink-300 hover:text-blue-500 bg-white hover:bg-blue-50 rounded-full p-2 transition-colors border border-transparent hover:border-blue-100"
-                                                                title="Editar producto"
-                                                            >
-                                                                <Edit2 size={18} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => borrarProducto(grupo.id, p.id)}
-                                                                className="text-pink-300 hover:text-red-400 bg-white hover:bg-red-50 rounded-full p-2 transition-colors border border-transparent hover:border-red-100"
-                                                                title="Eliminar producto"
-                                                            >
-                                                                <Trash2 size={18} />
-                                                            </button>
+                                                        {/* Mini-Dashboard de Resultados Reales y Venta */}
+                                                        <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 w-full lg:w-auto">
+
+                                                            <div className="bg-slate-50 p-2 md:p-3 rounded-xl border border-slate-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
+                                                                <p className="text-[9px] uppercase font-bold text-slate-400">Costo Final Total</p>
+                                                                <p className="text-sm font-bold text-slate-600">₲{Math.round(p.costoRealFinal).toLocaleString('es-PY')}</p>
+                                                            </div>
+
+                                                            <div className="bg-pink-50 p-2 md:p-3 rounded-xl border border-pink-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
+                                                                <p className="text-[9px] uppercase font-bold text-pink-400">Costo c/u</p>
+                                                                <p className="text-sm md:text-base font-bold text-pink-600">₲{Math.round(costoUnitario).toLocaleString('es-PY')}</p>
+                                                            </div>
+
+                                                            <div className="bg-green-50 p-2 md:p-3 rounded-xl border border-green-200 text-center flex-1 min-w-[100px] shadow-sm flex flex-col justify-center">
+                                                                <p className="text-[9px] md:text-[10px] uppercase font-bold text-green-500">Venta c/u</p>
+                                                                <p className="text-base md:text-xl font-black text-green-600">₲{Math.round(precioVentaUnitario).toLocaleString('es-PY')}</p>
+                                                            </div>
+
+                                                            {/* Botones de acción lateral */}
+                                                            <div className="flex flex-row sm:flex-col gap-1 shrink-0 justify-center w-full sm:w-auto mt-2 sm:mt-0">
+                                                                <button
+                                                                    onClick={() => iniciarEdicionProducto(p)}
+                                                                    className="flex-1 sm:flex-none flex justify-center text-pink-300 hover:text-blue-500 bg-white hover:bg-blue-50 rounded-lg sm:rounded-full p-2 transition-colors border border-pink-50 hover:border-blue-100"
+                                                                    title="Editar producto"
+                                                                >
+                                                                    <Edit2 size={16} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => borrarProducto(grupo.id, p.id)}
+                                                                    className="flex-1 sm:flex-none flex justify-center text-pink-300 hover:text-red-400 bg-white hover:bg-red-50 rounded-lg sm:rounded-full p-2 transition-colors border border-pink-50 hover:border-red-100"
+                                                                    title="Eliminar producto"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+
                                                         </div>
                                                     </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
+                                                )}
+                                            </div>
+                                        )})}
                                 </div>
                             </div>
                         ))}
