@@ -39,12 +39,14 @@ export default function App() {
                 await signInAnonymously(auth);
             } catch (error) {
                 console.error("Error al iniciar sesión:", error);
+                setCargando(false); // Detenemos la carga si hay un error
             }
         };
         iniciarAuth();
 
         const desuscribir = onAuthStateChanged(auth, (user) => {
             setUsuario(user);
+            if (!user) setCargando(false); // Detenemos la carga si no hay usuario
         });
         return () => desuscribir();
     }, []);
@@ -154,7 +156,7 @@ export default function App() {
 
     return (
         <div className="min-h-screen bg-pink-50 p-4 sm:p-6 md:p-8 font-sans text-slate-800">
-            <div className="max-w-6xl mx-auto space-y-6 md:space-y-8">
+            <div className="max-w-[1600px] w-full mx-auto space-y-6 md:space-y-8">
 
                 {/* Encabezado */}
                 <header className="flex flex-col sm:flex-row items-center gap-4 bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100">
