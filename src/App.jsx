@@ -6,7 +6,7 @@ import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc
 
 // ⚠️ ¡IMPORTANTE! VUELVE A PONER TUS DATOS DE FIREBASE AQUÍ ⚠️
 const firebaseConfig = {
-    apiKey: "TU_API_KEY",
+    apiKey: "AIzaSyAwtQohg4WLlzd1ZZiDHVKy5KjARPqtMRw",
     authDomain: "TU_PROYECTO.firebaseapp.com",
     projectId: "TU_PROYECTO",
     storageBucket: "TU_PROYECTO.appspot.com",
