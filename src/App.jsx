@@ -4,7 +4,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 
-// ¡Tus credenciales reales de Firebase ya están aquí!
+// ¡Tus credenciales reales de Firebase!
 const firebaseConfig = {
     apiKey: "AIzaSyAwtQohg4WLlzd1ZZiDHVKy5KjARPqtMRw",
     authDomain: "cherriecute.firebaseapp.com",
@@ -18,7 +18,7 @@ const appFirebase = initializeApp(firebaseConfig);
 const auth = getAuth(appFirebase);
 const bd = getFirestore(appFirebase);
 
-// --- NUEVO COMPONENTE: Calendario Visual ---
+// --- COMPONENTE: Calendario Visual ---
 const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccionada }) => {
     const [fechaVista, setFechaVista] = useState(new Date());
 
@@ -26,7 +26,7 @@ const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccio
     const anioActual = fechaVista.getFullYear();
 
     const diasEnMes = new Date(anioActual, mesActual + 1, 0).getDate();
-    const primerDiaMes = new Date(anioActual, mesActual, 1).getDay(); // 0 = Dom, 1 = Lun...
+    const primerDiaMes = new Date(anioActual, mesActual, 1).getDay();
 
     const diasNombres = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá'];
 
@@ -112,20 +112,17 @@ export default function App() {
     const generarId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
 
     useEffect(() => {
-        const iniciarAuth = async () => {
-            try {
-                await signInAnonymously(auth);
-            } catch (error) {
-                console.error("Error al iniciar sesión:", error);
-                alert("Error de conexión con Firebase Auth: " + error.message);
-                setCargando(false);
-            }
-        };
-        iniciarAuth();
-
+        // Autenticación mejorada: solo intenta loguear si no hay usuario guardado
         const desuscribir = onAuthStateChanged(auth, (user) => {
-            setUsuario(user);
-            if (!user) setCargando(false);
+            if (user) {
+                setUsuario(user);
+            } else {
+                signInAnonymously(auth).catch((error) => {
+                    console.error("Error al iniciar sesión:", error);
+                    alert("Error de conexión con Firebase Auth: " + error.message);
+                    setCargando(false);
+                });
+            }
         });
         return () => desuscribir();
     }, []);
@@ -134,7 +131,8 @@ export default function App() {
         if (!usuario) return;
 
         try {
-            const referenciaGrupos = collection(bd, 'usuarios', usuario.uid, 'gruposEnvio');
+            // AHORA TODOS LEEN DE LA MISMA CARPETA GLOBAL: 'gruposEnvio'
+            const referenciaGrupos = collection(bd, 'gruposEnvio');
 
             const desuscribir = onSnapshot(referenciaGrupos, (instantanea) => {
                 const gruposCargados = [];
@@ -174,7 +172,8 @@ export default function App() {
                 creadoPor: usuario.uid
             };
 
-            const nuevaReferencia = doc(collection(bd, 'usuarios', usuario.uid, 'gruposEnvio'));
+            // Guardando en la carpeta global
+            const nuevaReferencia = doc(collection(bd, 'gruposEnvio'));
             await setDoc(nuevaReferencia, nuevoGrupo);
 
             setNuevaFecha('');
@@ -182,7 +181,7 @@ export default function App() {
             setNuevoPesoTotal('');
         } catch (error) {
             console.error("Error al guardar grupo:", error);
-            alert("No se pudo guardar el grupo. Firebase dice: " + error.message);
+            alert("No se pudo guardar el grupo. Revisa tus reglas de Firebase.");
         }
     };
 
@@ -190,7 +189,7 @@ export default function App() {
         if (!usuario) return;
         if (!window.confirm("¿Estás segura de eliminar este grupo entero?")) return;
         try {
-            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', id);
+            const referenciaDoc = doc(bd, 'gruposEnvio', id);
             await deleteDoc(referenciaDoc);
         } catch (error) {
             alert("Error al borrar el grupo: " + error.message);
@@ -213,9 +212,8 @@ export default function App() {
             const nuevoCostoEnvio = parseFloat(grupoEditado.costoEnvioTotal);
             const nuevoPesoTotal = parseFloat(grupoEditado.pesoTotal);
 
-            // ¡Magia! Recalculamos todos los productos de este grupo con los nuevos datos
             const productosActualizados = grupoActual.productos.map(p => {
-                const costoEnvioCalculado = (p.peso * nuevoCostoEnvio) / (nuevoPesoTotal || 1); // Evitamos división por cero
+                const costoEnvioCalculado = (p.peso * nuevoCostoEnvio) / (nuevoPesoTotal || 1);
                 return {
                     ...p,
                     costoEnvioCalculado: costoEnvioCalculado,
@@ -223,7 +221,7 @@ export default function App() {
                 };
             });
 
-            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
+            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
             await updateDoc(referenciaDoc, {
                 fecha: grupoEditado.fecha,
                 costoEnvioTotal: nuevoCostoEnvio,
@@ -261,7 +259,7 @@ export default function App() {
             };
 
             const nuevosProductos = [...grupo.productos, nuevoProducto];
-            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
+            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
             await updateDoc(referenciaDoc, { productos: nuevosProductos });
 
             setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '' } }));
@@ -277,7 +275,7 @@ export default function App() {
             const grupo = grupos.find(g => g.id === idGrupo);
             const nuevosProductos = grupo.productos.filter(p => p.id !== idProducto);
 
-            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
+            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
             await updateDoc(referenciaDoc, { productos: nuevosProductos });
         } catch (error) {
             alert("Error al borrar el producto: " + error.message);
@@ -300,7 +298,6 @@ export default function App() {
             const precio = parseFloat(productoEditado.precio);
             const peso = parseFloat(productoEditado.peso);
 
-            // Recalculamos este producto específico
             const costoEnvioCalculado = (peso * grupoActual.costoEnvioTotal) / grupoActual.pesoTotal;
             const costoRealFinal = precio + costoEnvioCalculado;
 
@@ -318,7 +315,7 @@ export default function App() {
                 return p;
             });
 
-            const referenciaDoc = doc(bd, 'usuarios', usuario.uid, 'gruposEnvio', idGrupo);
+            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
             await updateDoc(referenciaDoc, { productos: productosActualizados });
 
             setEditandoProducto(null);
@@ -339,12 +336,10 @@ export default function App() {
         }));
     };
 
-    // Obtener lista de fechas que tienen grupos para marcarlas en el calendario
     const fechasConGrupos = useMemo(() => {
         return [...new Set(grupos.map(g => g.fecha))];
     }, [grupos]);
 
-    // Cálculo de la convertidora
     const totalConvertido = (parseFloat(cotizacionDolar) || 0) * (parseFloat(cantidadDolar) || 0);
 
     return (
@@ -364,7 +359,7 @@ export default function App() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-8">
 
-                    {/* Columna Lateral (Convertidora, Buscador y Nuevo Grupo) */}
+                    {/* Columna Lateral */}
                     <aside className="lg:col-span-4 space-y-5">
 
                         {/* Convertidora de Moneda */}
@@ -405,7 +400,7 @@ export default function App() {
                             </div>
                         </div>
 
-                        {/* Buscador convertido en Calendario Visual */}
+                        {/* Calendario Visual */}
                         <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100 space-y-3">
                             <div className="flex justify-between items-center">
                                 <h2 className="text-base md:text-lg font-semibold text-slate-600 flex items-center gap-2">
@@ -558,7 +553,7 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {/* Formulario de Producto Nuevo (Optimizado para Celular) */}
+                                {/* Formulario de Producto Nuevo */}
                                 <div className="p-3 md:p-5 bg-pink-50/30 border-b border-pink-100">
                                     <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
                                         <div className="col-span-2 sm:col-span-5">
@@ -648,9 +643,16 @@ export default function App() {
                                                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
                                                     <div className="flex-1 min-w-0 w-full">
                                                         <p className="font-bold text-slate-600 text-base md:text-lg truncate" title={p.nombre}>{p.nombre}</p>
-                                                        <div className="flex flex-wrap gap-2 mt-1.5">
-                                                            <span className="text-[11px] md:text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Original: ₲{p.precio.toLocaleString()}</span>
-                                                            <span className="text-[11px] md:text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Peso: {p.peso}kg</span>
+                                                        <div className="flex flex-wrap gap-2 mt-2">
+                              <span className="text-[11px] md:text-xs bg-slate-50 px-2 py-1 rounded-md text-slate-500 font-medium border border-slate-100">
+                                📦 {p.peso}kg
+                              </span>
+                                                            <span className="text-[11px] md:text-xs bg-blue-50 px-2 py-1 rounded-md text-blue-600 font-medium border border-blue-100">
+                                🏷️ Compra: ₲{p.precio.toLocaleString()}
+                              </span>
+                                                            <span className="text-[11px] md:text-xs bg-orange-50 px-2 py-1 rounded-md text-orange-600 font-medium border border-orange-100">
+                                ✈️ Envío: ₲{Math.round(p.costoEnvioCalculado || 0).toLocaleString()}
+                              </span>
                                                         </div>
                                                     </div>
 
