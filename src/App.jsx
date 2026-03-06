@@ -4,7 +4,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 
-// ⚠️ ¡IMPORTANTE! VUELVE A PONER TUS DATOS DE FIREBASE AQUÍ ⚠️
+// ¡Tus credenciales reales de Firebase ya están aquí!
 const firebaseConfig = {
     apiKey: "AIzaSyAwtQohg4WLlzd1ZZiDHVKy5KjARPqtMRw",
     authDomain: "cherriecute.firebaseapp.com",
@@ -95,7 +95,6 @@ export default function App() {
                 creadoPor: usuario.uid
             };
 
-            // Usamos doc() de Firebase para crear una referencia segura
             const nuevaReferencia = doc(collection(bd, 'usuarios', usuario.uid, 'gruposEnvio'));
             await setDoc(nuevaReferencia, nuevoGrupo);
 
@@ -118,7 +117,7 @@ export default function App() {
         }
     };
 
-    // Manejadores de Productos con Alertas de Error
+    // Manejadores de Productos (Ej: Tus audífonos Sony o cargador Anker)
     const agregarProducto = async (idGrupo, e) => {
         e.preventDefault();
         const form = productoFormulario[idGrupo];
@@ -178,17 +177,17 @@ export default function App() {
     };
 
     return (
-        <div className="min-h-screen bg-pink-50 p-4 sm:p-6 md:p-8 font-sans text-slate-800">
+        <div className="min-h-screen bg-pink-50/50 p-4 sm:p-6 md:p-8 font-sans text-slate-700">
             <div className="max-w-[1600px] w-full mx-auto space-y-6 md:space-y-8">
 
-                {/* Encabezado */}
+                {/* Encabezado Principal */}
                 <header className="flex flex-col sm:flex-row items-center gap-4 bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100">
-                    <div className="bg-pink-100 p-3 rounded-full text-pink-500">
+                    <div className="bg-pink-100 p-3 rounded-full text-pink-400">
                         <Cherry size={32} />
                     </div>
                     <div className="text-center sm:text-left">
-                        <h1 className="text-2xl md:text-3xl font-bold text-pink-600 tracking-tight">Cherriecute</h1>
-                        <p className="text-xs md:text-sm text-pink-400 font-medium italic">Calculadora de Costos Reales</p>
+                        <h1 className="text-2xl md:text-3xl font-bold text-pink-500 tracking-tight">Cherriecute</h1>
+                        <p className="text-xs md:text-sm text-pink-300 font-medium italic">Calculadora de Costos Reales</p>
                     </div>
                 </header>
 
@@ -196,24 +195,25 @@ export default function App() {
 
                     {/* Columna Lateral (Buscador y Nuevo Grupo) */}
                     <aside className="lg:col-span-4 space-y-6">
+
                         {/* Buscador */}
                         <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100 space-y-4">
-                            <h2 className="text-lg font-semibold text-slate-700 flex items-center gap-2">
-                                <Search size={20} className="text-pink-400" />
+                            <h2 className="text-lg font-semibold text-slate-600 flex items-center gap-2">
+                                <Search size={20} className="text-pink-300" />
                                 Buscar por fecha
                             </h2>
                             <input
                                 type="date"
                                 value={filtroFecha}
                                 onChange={(e) => setFiltroFecha(e.target.value)}
-                                className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl focus:ring-2 focus:ring-pink-300 text-sm"
+                                className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl focus:ring-2 focus:ring-pink-200 text-sm outline-none text-slate-600"
                             />
                         </div>
 
                         {/* Formulario Nuevo Grupo */}
                         <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
-                            <h2 className="text-lg font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                                <Package size={20} className="text-pink-400" />
+                            <h2 className="text-lg font-semibold text-slate-600 mb-4 flex items-center gap-2">
+                                <Package size={20} className="text-pink-300" />
                                 Nuevo Grupo de Envío
                             </h2>
                             <form onSubmit={agregarGrupo} className="space-y-4">
@@ -224,7 +224,7 @@ export default function App() {
                                         required
                                         value={nuevaFecha}
                                         onChange={(e) => setNuevaFecha(e.target.value)}
-                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm"
+                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                     />
                                 </div>
                                 <input
@@ -233,7 +233,7 @@ export default function App() {
                                     required
                                     value={nuevoCostoEnvio}
                                     onChange={(e) => setNuevoCostoEnvio(e.target.value)}
-                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm"
+                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                 />
                                 <input
                                     type="number"
@@ -242,15 +242,15 @@ export default function App() {
                                     required
                                     value={nuevoPesoTotal}
                                     onChange={(e) => setNuevoPesoTotal(e.target.value)}
-                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm"
+                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                 />
-                                <button type="submit" className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 rounded-2xl transition-all shadow-md flex items-center justify-center gap-2 active:scale-95">
+                                <button type="submit" className="w-full bg-pink-200 hover:bg-pink-300 text-pink-800 font-bold py-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95">
                                     <Plus size={22} /> Crear Grupo
                                 </button>
                             </form>
                         </div>
 
-                        <div className="bg-pink-100/50 p-4 rounded-2xl border border-pink-200 text-pink-700 text-xs flex gap-3">
+                        <div className="bg-white p-4 rounded-2xl border border-pink-100 text-pink-400 text-xs flex gap-3 shadow-sm">
                             <Info className="shrink-0" size={18} />
                             <p>El costo real se calcula distribuyendo el flete proporcionalmente al peso de cada producto.</p>
                         </div>
@@ -271,19 +271,21 @@ export default function App() {
                         ) : gruposFiltrados.map(grupo => (
                             <div key={grupo.id} className="bg-white rounded-3xl shadow-sm border border-pink-100 overflow-hidden transition-all hover:shadow-md">
 
-                                {/* Cabecera del Grupo */}
-                                <div className="bg-pink-500 p-4 md:p-5 flex flex-wrap justify-between items-center gap-3">
-                                    <div className="flex items-center gap-3 text-white">
-                                        <Calendar size={20} />
+                                {/* Cabecera del Grupo (Ahora en Tono Pastel Suave) */}
+                                <div className="bg-pink-100 p-4 md:p-5 flex flex-wrap justify-between items-center gap-3 border-b border-pink-200">
+                                    <div className="flex items-center gap-3 text-pink-800">
+                                        <Calendar size={20} className="text-pink-400" />
                                         <span className="font-bold text-lg">{new Date(grupo.fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
                                     </div>
-                                    <div className="flex items-center gap-3 bg-pink-600/30 px-4 py-2 rounded-full border border-pink-400/50">
-                    <span className="text-white text-xs md:text-sm font-bold">
-                      ₲{grupo.costoEnvioTotal.toLocaleString()} | {grupo.pesoTotal}kg
-                    </span>
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-white px-4 py-2 rounded-full border border-pink-200 shadow-sm">
+                      <span className="text-pink-700 text-xs md:text-sm font-bold">
+                        ₲{grupo.costoEnvioTotal.toLocaleString()} | {grupo.pesoTotal}kg
+                      </span>
+                                        </div>
                                         <button
                                             onClick={() => borrarGrupo(grupo.id)}
-                                            className="text-pink-100 hover:text-white transition-colors ml-2"
+                                            className="bg-white p-2 rounded-full text-pink-300 hover:text-red-400 hover:bg-red-50 border border-pink-100 shadow-sm transition-all"
                                             title="Eliminar este grupo"
                                         >
                                             <Trash2 size={18} />
@@ -292,12 +294,12 @@ export default function App() {
                                 </div>
 
                                 {/* Formulario de Producto */}
-                                <div className="p-4 md:p-5 bg-slate-50 border-b border-slate-100">
+                                <div className="p-4 md:p-5 bg-pink-50/30 border-b border-pink-100">
                                     <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                                         <div className="sm:col-span-6">
                                             <input
                                                 placeholder="Nombre del producto"
-                                                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none"
+                                                className="w-full px-4 py-3 bg-white border border-pink-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.nombre || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'nombre', e.target.value)}
                                             />
@@ -306,7 +308,7 @@ export default function App() {
                                             <input
                                                 type="number"
                                                 placeholder="Precio (₲)"
-                                                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none"
+                                                className="w-full px-4 py-3 bg-white border border-pink-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.precio || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'precio', e.target.value)}
                                             />
@@ -316,13 +318,13 @@ export default function App() {
                                                 type="number"
                                                 placeholder="kg"
                                                 step="0.001"
-                                                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none"
+                                                className="w-full px-4 py-3 bg-white border border-pink-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.peso || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'peso', e.target.value)}
                                             />
                                         </div>
                                         <div className="sm:col-span-1">
-                                            <button type="submit" className="w-full h-full bg-slate-800 text-white p-3 rounded-xl hover:bg-slate-700 transition-colors flex justify-center items-center">
+                                            <button type="submit" className="w-full h-full bg-pink-200 text-pink-800 p-3 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm">
                                                 <Plus size={20}/>
                                             </button>
                                         </div>
@@ -332,25 +334,25 @@ export default function App() {
                                 {/* Lista de Productos */}
                                 <div className="p-4 md:p-5 space-y-3">
                                     {grupo.productos.length === 0 ? (
-                                        <p className="text-center text-slate-400 text-sm py-4 italic">No hay productos en este envío todavía.</p>
+                                        <p className="text-center text-pink-300 text-sm py-4 italic">No hay productos en este envío todavía.</p>
                                     ) : grupo.productos.map(p => (
-                                        <div key={p.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white border border-slate-100 p-4 rounded-2xl gap-4 group">
+                                        <div key={p.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white border border-pink-100 shadow-sm p-4 rounded-2xl gap-4 group hover:border-pink-200 transition-colors">
                                             <div className="flex-1 min-w-0 w-full">
-                                                <p className="font-bold text-slate-700 text-lg truncate" title={p.nombre}>{p.nombre}</p>
+                                                <p className="font-bold text-slate-600 text-lg truncate" title={p.nombre}>{p.nombre}</p>
                                                 <div className="flex flex-wrap gap-3 mt-1">
-                                                    <span className="text-xs bg-slate-100 px-2 py-1 rounded-md text-slate-500 font-medium">Original: ₲{p.precio.toLocaleString()}</span>
-                                                    <span className="text-xs bg-slate-100 px-2 py-1 rounded-md text-slate-500 font-medium">Peso: {p.peso}kg</span>
+                                                    <span className="text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Original: ₲{p.precio.toLocaleString()}</span>
+                                                    <span className="text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Peso: {p.peso}kg</span>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-6 border-t sm:border-t-0 pt-3 sm:pt-0">
+                                            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-6 border-t border-pink-50 sm:border-t-0 pt-3 sm:pt-0">
                                                 <div className="text-right">
-                                                    <p className="text-[10px] uppercase font-bold text-pink-500 tracking-wider">Costo Final Real</p>
-                                                    <p className="text-xl font-black text-pink-600">₲{Math.round(p.costoRealFinal).toLocaleString()}</p>
+                                                    <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">Costo Final Real</p>
+                                                    <p className="text-xl font-black text-pink-500">₲{Math.round(p.costoRealFinal).toLocaleString()}</p>
                                                 </div>
                                                 <button
                                                     onClick={() => borrarProducto(grupo.id, p.id)}
-                                                    className="text-slate-300 hover:text-red-500 transition-colors p-2"
+                                                    className="text-pink-200 hover:text-red-400 bg-white hover:bg-red-50 rounded-full p-2 transition-colors"
                                                     title="Eliminar producto"
                                                 >
                                                     <Trash2 size={18} />
