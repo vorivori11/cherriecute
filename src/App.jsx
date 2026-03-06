@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Calendar, Package, Cherry, Loader2, Trash2, Info } from 'lucide-react';
+import { Search, Plus, Calendar, Package, Cherry, Loader2, Trash2, Info, DollarSign } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
@@ -24,10 +24,15 @@ export default function App() {
     const [grupos, setGrupos] = useState([]);
     const [filtroFecha, setFiltroFecha] = useState('');
 
+    // Estados para nuevos registros
     const [nuevaFecha, setNuevaFecha] = useState('');
     const [nuevoCostoEnvio, setNuevoCostoEnvio] = useState('');
     const [nuevoPesoTotal, setNuevoPesoTotal] = useState('');
     const [productoFormulario, setProductoFormulario] = useState({});
+
+    // Estados para la convertidora de Dólares
+    const [cotizacionDolar, setCotizacionDolar] = useState('');
+    const [cantidadDolar, setCantidadDolar] = useState('');
 
     // Generador de ID seguro
     const generarId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
@@ -117,7 +122,7 @@ export default function App() {
         }
     };
 
-    // Manejadores de Productos (Ej: Tus audífonos Sony o cargador Anker)
+    // Manejadores de Productos
     const agregarProducto = async (idGrupo, e) => {
         e.preventDefault();
         const form = productoFormulario[idGrupo];
@@ -176,14 +181,17 @@ export default function App() {
         }));
     };
 
+    // Cálculo de la convertidora
+    const totalConvertido = (parseFloat(cotizacionDolar) || 0) * (parseFloat(cantidadDolar) || 0);
+
     return (
-        <div className="min-h-screen bg-pink-50/50 p-4 sm:p-6 md:p-8 font-sans text-slate-700">
-            <div className="max-w-[1600px] w-full mx-auto space-y-6 md:space-y-8">
+        <div className="min-h-screen bg-pink-50/50 p-3 sm:p-5 md:p-8 font-sans text-slate-700 pb-20">
+            <div className="max-w-[1600px] w-full mx-auto space-y-5 md:space-y-8">
 
                 {/* Encabezado Principal */}
-                <header className="flex flex-col sm:flex-row items-center gap-4 bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100">
+                <header className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-pink-100">
                     <div className="bg-pink-100 p-3 rounded-full text-pink-400">
-                        <Cherry size={32} />
+                        <Cherry size={28} className="sm:w-8 sm:h-8" />
                     </div>
                     <div className="text-center sm:text-left">
                         <h1 className="text-2xl md:text-3xl font-bold text-pink-500 tracking-tight">Cherriecute</h1>
@@ -191,14 +199,52 @@ export default function App() {
                     </div>
                 </header>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 md:gap-8">
 
-                    {/* Columna Lateral (Buscador y Nuevo Grupo) */}
-                    <aside className="lg:col-span-4 space-y-6">
+                    {/* Columna Lateral (Convertidora, Buscador y Nuevo Grupo) */}
+                    <aside className="lg:col-span-4 space-y-5">
+
+                        {/* Convertidora de Moneda */}
+                        <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100 space-y-4">
+                            <h2 className="text-base md:text-lg font-semibold text-slate-600 flex items-center gap-2">
+                                <div className="bg-green-100 p-1.5 rounded-full">
+                                    <DollarSign size={18} className="text-green-500" />
+                                </div>
+                                Convertidora a Guaraníes
+                            </h2>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] md:text-xs font-bold text-slate-400 ml-2 uppercase">Cambio BCP/Banco</label>
+                                    <input
+                                        type="number"
+                                        value={cotizacionDolar}
+                                        onChange={(e) => setCotizacionDolar(e.target.value)}
+                                        placeholder="Ej. 7300"
+                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] md:text-xs font-bold text-slate-400 ml-2 uppercase">Cant. en USD ($)</label>
+                                    <input
+                                        type="number"
+                                        value={cantidadDolar}
+                                        onChange={(e) => setCantidadDolar(e.target.value)}
+                                        placeholder="Ej. 25.50"
+                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
+                                    />
+                                </div>
+                            </div>
+                            <div className="bg-pink-50 border border-pink-100 p-3 md:p-4 rounded-2xl flex flex-col items-center justify-center">
+                                <span className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">Equivale a</span>
+                                <span className="text-2xl md:text-3xl font-black text-pink-500">
+                  ₲{totalConvertido.toLocaleString('es-PY')}
+                </span>
+                            </div>
+                        </div>
 
                         {/* Buscador */}
-                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100 space-y-4">
-                            <h2 className="text-lg font-semibold text-slate-600 flex items-center gap-2">
+                        <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100 space-y-3">
+                            <h2 className="text-base md:text-lg font-semibold text-slate-600 flex items-center gap-2">
                                 <Search size={20} className="text-pink-300" />
                                 Buscar por fecha
                             </h2>
@@ -206,13 +252,13 @@ export default function App() {
                                 type="date"
                                 value={filtroFecha}
                                 onChange={(e) => setFiltroFecha(e.target.value)}
-                                className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl focus:ring-2 focus:ring-pink-200 text-sm outline-none text-slate-600"
+                                className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl focus:ring-2 focus:ring-pink-200 text-base outline-none text-slate-600"
                             />
                         </div>
 
                         {/* Formulario Nuevo Grupo */}
-                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
-                            <h2 className="text-lg font-semibold text-slate-600 mb-4 flex items-center gap-2">
+                        <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100">
+                            <h2 className="text-base md:text-lg font-semibold text-slate-600 mb-4 flex items-center gap-2">
                                 <Package size={20} className="text-pink-300" />
                                 Nuevo Grupo de Envío
                             </h2>
@@ -224,7 +270,7 @@ export default function App() {
                                         required
                                         value={nuevaFecha}
                                         onChange={(e) => setNuevaFecha(e.target.value)}
-                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
+                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                     />
                                 </div>
                                 <input
@@ -233,7 +279,7 @@ export default function App() {
                                     required
                                     value={nuevoCostoEnvio}
                                     onChange={(e) => setNuevoCostoEnvio(e.target.value)}
-                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
+                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                 />
                                 <input
                                     type="number"
@@ -242,7 +288,7 @@ export default function App() {
                                     required
                                     value={nuevoPesoTotal}
                                     onChange={(e) => setNuevoPesoTotal(e.target.value)}
-                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-sm outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
+                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
                                 />
                                 <button type="submit" className="w-full bg-pink-200 hover:bg-pink-300 text-pink-800 font-bold py-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95">
                                     <Plus size={22} /> Crear Grupo
@@ -250,42 +296,42 @@ export default function App() {
                             </form>
                         </div>
 
-                        <div className="bg-white p-4 rounded-2xl border border-pink-100 text-pink-400 text-xs flex gap-3 shadow-sm">
+                        <div className="hidden lg:flex bg-white p-4 rounded-2xl border border-pink-100 text-pink-400 text-xs gap-3 shadow-sm">
                             <Info className="shrink-0" size={18} />
                             <p>El costo real se calcula distribuyendo el flete proporcionalmente al peso de cada producto.</p>
                         </div>
                     </aside>
 
                     {/* Columna Principal (Lista de Grupos) */}
-                    <main className="lg:col-span-8 space-y-6">
+                    <main className="lg:col-span-8 space-y-5">
                         {cargando ? (
-                            <div className="flex flex-col items-center justify-center p-20 text-pink-300">
-                                <Loader2 className="animate-spin mb-4" size={48} />
+                            <div className="flex flex-col items-center justify-center p-10 md:p-20 text-pink-300">
+                                <Loader2 className="animate-spin mb-4" size={40} />
                                 <p className="font-medium">Cargando tus datos...</p>
                             </div>
                         ) : gruposFiltrados.length === 0 ? (
-                            <div className="bg-white p-12 rounded-3xl text-center border border-dashed border-pink-200">
+                            <div className="bg-white p-10 md:p-12 rounded-3xl text-center border border-dashed border-pink-200">
                                 <Package size={48} className="mx-auto text-pink-100 mb-4" />
                                 <p className="text-slate-400 font-medium">No hay envíos registrados para esta fecha.</p>
                             </div>
                         ) : gruposFiltrados.map(grupo => (
                             <div key={grupo.id} className="bg-white rounded-3xl shadow-sm border border-pink-100 overflow-hidden transition-all hover:shadow-md">
 
-                                {/* Cabecera del Grupo (Ahora en Tono Pastel Suave) */}
-                                <div className="bg-pink-100 p-4 md:p-5 flex flex-wrap justify-between items-center gap-3 border-b border-pink-200">
-                                    <div className="flex items-center gap-3 text-pink-800">
-                                        <Calendar size={20} className="text-pink-400" />
-                                        <span className="font-bold text-lg">{new Date(grupo.fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
+                                {/* Cabecera del Grupo */}
+                                <div className="bg-pink-100 p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-pink-200">
+                                    <div className="flex items-center gap-2 text-pink-800">
+                                        <Calendar size={18} className="text-pink-400 shrink-0" />
+                                        <span className="font-bold text-base md:text-lg">{new Date(grupo.fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-white px-4 py-2 rounded-full border border-pink-200 shadow-sm">
-                      <span className="text-pink-700 text-xs md:text-sm font-bold">
+                                    <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                                        <div className="bg-white px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-pink-200 shadow-sm flex-1 sm:flex-none text-center">
+                      <span className="text-pink-700 text-xs md:text-sm font-bold block">
                         ₲{grupo.costoEnvioTotal.toLocaleString()} | {grupo.pesoTotal}kg
                       </span>
                                         </div>
                                         <button
                                             onClick={() => borrarGrupo(grupo.id)}
-                                            className="bg-white p-2 rounded-full text-pink-300 hover:text-red-400 hover:bg-red-50 border border-pink-100 shadow-sm transition-all"
+                                            className="bg-white p-2 rounded-full text-pink-300 hover:text-red-400 hover:bg-red-50 border border-pink-100 shadow-sm transition-all shrink-0"
                                             title="Eliminar este grupo"
                                         >
                                             <Trash2 size={18} />
@@ -293,66 +339,68 @@ export default function App() {
                                     </div>
                                 </div>
 
-                                {/* Formulario de Producto */}
-                                <div className="p-4 md:p-5 bg-pink-50/30 border-b border-pink-100">
-                                    <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                                        <div className="sm:col-span-6">
+                                {/* Formulario de Producto (Optimizado para Celular) */}
+                                <div className="p-3 md:p-5 bg-pink-50/30 border-b border-pink-100">
+                                    <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
+                                        <div className="col-span-2 sm:col-span-5">
                                             <input
                                                 placeholder="Nombre del producto"
-                                                className="w-full px-4 py-3 bg-white border border-pink-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.nombre || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'nombre', e.target.value)}
                                             />
                                         </div>
-                                        <div className="sm:col-span-3">
+                                        <div className="col-span-1 sm:col-span-3">
                                             <input
                                                 type="number"
                                                 placeholder="Precio (₲)"
-                                                className="w-full px-4 py-3 bg-white border border-pink-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.precio || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'precio', e.target.value)}
                                             />
                                         </div>
-                                        <div className="sm:col-span-2">
+                                        <div className="col-span-1 sm:col-span-2">
                                             <input
                                                 type="number"
-                                                placeholder="kg"
+                                                placeholder="Peso(kg)"
                                                 step="0.001"
-                                                className="w-full px-4 py-3 bg-white border border-pink-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.peso || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'peso', e.target.value)}
                                             />
                                         </div>
-                                        <div className="sm:col-span-1">
-                                            <button type="submit" className="w-full h-full bg-pink-200 text-pink-800 p-3 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm">
-                                                <Plus size={20}/>
+                                        <div className="col-span-2 sm:col-span-2">
+                                            <button type="submit" className="w-full py-3 bg-pink-200 text-pink-800 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm font-bold gap-2">
+                                                <Plus size={20} className="sm:hidden" />
+                                                <span className="sm:hidden">Agregar</span>
+                                                <Plus size={20} className="hidden sm:block" />
                                             </button>
                                         </div>
                                     </form>
                                 </div>
 
                                 {/* Lista de Productos */}
-                                <div className="p-4 md:p-5 space-y-3">
+                                <div className="p-3 md:p-5 space-y-3">
                                     {grupo.productos.length === 0 ? (
                                         <p className="text-center text-pink-300 text-sm py-4 italic">No hay productos en este envío todavía.</p>
                                     ) : grupo.productos.map(p => (
-                                        <div key={p.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white border border-pink-100 shadow-sm p-4 rounded-2xl gap-4 group hover:border-pink-200 transition-colors">
+                                        <div key={p.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white border border-pink-100 shadow-sm p-4 rounded-2xl gap-3 sm:gap-4 group hover:border-pink-200 transition-colors">
                                             <div className="flex-1 min-w-0 w-full">
-                                                <p className="font-bold text-slate-600 text-lg truncate" title={p.nombre}>{p.nombre}</p>
-                                                <div className="flex flex-wrap gap-3 mt-1">
-                                                    <span className="text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Original: ₲{p.precio.toLocaleString()}</span>
-                                                    <span className="text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Peso: {p.peso}kg</span>
+                                                <p className="font-bold text-slate-600 text-base md:text-lg truncate" title={p.nombre}>{p.nombre}</p>
+                                                <div className="flex flex-wrap gap-2 mt-1.5">
+                                                    <span className="text-[11px] md:text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Original: ₲{p.precio.toLocaleString()}</span>
+                                                    <span className="text-[11px] md:text-xs bg-pink-50 px-2 py-1 rounded-md text-pink-600 font-medium border border-pink-100">Peso: {p.peso}kg</span>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-6 border-t border-pink-50 sm:border-t-0 pt-3 sm:pt-0">
-                                                <div className="text-right">
+                                            <div className="flex items-center justify-between w-full sm:w-auto gap-4 border-t border-pink-50 sm:border-t-0 pt-3 sm:pt-0">
+                                                <div className="text-left sm:text-right">
                                                     <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">Costo Final Real</p>
-                                                    <p className="text-xl font-black text-pink-500">₲{Math.round(p.costoRealFinal).toLocaleString()}</p>
+                                                    <p className="text-lg md:text-xl font-black text-pink-500">₲{Math.round(p.costoRealFinal).toLocaleString()}</p>
                                                 </div>
                                                 <button
                                                     onClick={() => borrarProducto(grupo.id, p.id)}
-                                                    className="text-pink-200 hover:text-red-400 bg-white hover:bg-red-50 rounded-full p-2 transition-colors"
+                                                    className="text-pink-200 hover:text-red-400 bg-white hover:bg-red-50 rounded-full p-2 transition-colors border border-transparent hover:border-red-100"
                                                     title="Eliminar producto"
                                                 >
                                                     <Trash2 size={18} />
