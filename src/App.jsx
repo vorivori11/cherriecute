@@ -269,7 +269,7 @@ export default function App() {
             const costoRealFinal = precio + costoEnvioCalculado;
             const costoUnitario = costoRealFinal / cantidad;
 
-            // Usamos el precio escrito manualmente si existe
+            // Usamos el precio escrito manualmente si existe, sino el calculado
             const pvIngresado = desformatearGuaranies(form.precioVenta);
             const precioVentaUnitarioFinal = pvIngresado > 0 ? pvIngresado : Math.round(costoUnitario * (1 + (ganancia / 100)));
 
@@ -328,7 +328,7 @@ export default function App() {
         setEditandoProducto(producto.id);
         const costoUnitario = producto.costoRealFinal / (producto.cantidad || 1);
 
-        // Leemos el precio desde Firebase, si no existe lo calculamos como respaldo
+        // Leemos el precio exacto desde Firebase
         const pv = producto.precioVentaUnitario || (costoUnitario * (1 + ((producto.porcentajeGanancia || 0) / 100)));
 
         setProductoEditado({
@@ -337,7 +337,7 @@ export default function App() {
             peso: producto.peso,
             cantidad: producto.cantidad || 1,
             ganancia: producto.porcentajeGanancia || 0,
-            precioVenta: formatearGuaranies(Math.round(pv))
+            precioVenta: formatearGuaranies(pv) // Aseguramos que sea el valor exacto, sin redondear prematuramente
         });
     };
 
@@ -383,17 +383,20 @@ export default function App() {
         }
     };
 
-    // Lógica inteligente recíproca
+    // Lógica inteligente recíproca MEJORADA: Evita pérdida de precisión
     const handleEdicionInteligente = (campo, valor, grupoActual) => {
         let nuevoEditado = { ...productoEditado };
 
         if (campo === 'precioVenta') {
-            const pvNum = desformatearGuaranies(valor);
+            // Si el usuario edita el precio de venta manualmente, actualizamos el texto formateado
             nuevoEditado.precioVenta = formatearGuaranies(valor);
 
+            // Y calculamos el nuevo porcentaje de ganancia para mostrárselo
+            const pvNum = desformatearGuaranies(valor);
             const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
+
             if (costoUnit > 0) {
-                nuevoEditado.ganancia = (((pvNum / costoUnit) - 1) * 100).toFixed(1);
+                nuevoEditado.ganancia = (((pvNum / costoUnit) - 1) * 100).toFixed(2); // Usamos 2 decimales temporalmente para precisión
             }
         }
         else if (campo === 'ganancia') {
@@ -434,17 +437,17 @@ export default function App() {
 
                 if (campo === 'precioVenta') {
                     const pv = desformatearGuaranies(nuevoForm.precioVenta);
-                    if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(1);
+                    if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(2);
                 }
                 else if (campo === 'ganancia') {
                     const gan = parseFloat(nuevoForm.ganancia) || 0;
                     nuevoForm.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
                 }
                 else {
-                    // Si cambian precios/peso pero ya habían escrito un precio de venta manualmente sin porcentaje, calculamos ganancia primero
-                    if (nuevoForm.precioVenta && (!nuevoForm.ganancia || nuevoForm.ganancia === '')) {
+                    // Mantenemos el cálculo de la ganancia en base al precio de venta si ya se había ingresado uno
+                    if (nuevoForm.precioVenta && campo !== 'ganancia') {
                         const pv = desformatearGuaranies(nuevoForm.precioVenta);
-                        if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(1);
+                        if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(2);
                     } else {
                         const gan = parseFloat(nuevoForm.ganancia) || 0;
                         nuevoForm.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
@@ -477,6 +480,7 @@ export default function App() {
 
                     const cantidadItem = p.cantidad || 1;
                     const costoUnitario = p.costoRealFinal / cantidadItem;
+                    // Aseguramos leer el precio guardado en Firebase o calcularlo como fallback
                     const precioVentaUnitario = p.precioVentaUnitario || (costoUnitario * (1 + ((p.porcentajeGanancia || 0) / 100)));
 
                     ganancia += (precioVentaUnitario * cantidadItem) - p.costoRealFinal;
@@ -806,9 +810,10 @@ export default function App() {
                                     ) : grupo.productos.map(p => {
                                         const cantidadItem = p.cantidad || 1;
                                         const costoUnitario = p.costoRealFinal / cantidadItem;
-                                        // Ahora priorizamos el precio de venta exacto guardado en Firebase
                                         const precioVentaUnitario = p.precioVentaUnitario || (costoUnitario * (1 + ((p.porcentajeGanancia || 0) / 100)));
-                                        const gananciaItem = p.precioVentaUnitario ? (((p.precioVentaUnitario / costoUnitario) - 1) * 100).toFixed(1) : (p.porcentajeGanancia || 0);
+
+                                        // Calculamos la ganancia real para mostrarla en la etiqueta si se forzó el precio
+                                        const gananciaReal = p.precioVentaUnitario && costoUnitario > 0 ? (((p.precioVentaUnitario / costoUnitario) - 1) * 100).toFixed(1) : (p.porcentajeGanancia || 0);
 
                                         return (
                                             <div key={p.id} className={`bg-white border shadow-sm p-4 rounded-2xl group transition-all ${p.vendido ? 'border-green-200 bg-green-50/10 opacity-90' : 'border-pink-100 hover:border-pink-200'}`}>
@@ -908,9 +913,9 @@ export default function App() {
                                                                 <span className="text-[11px] md:text-xs bg-orange-50 px-2 py-1 rounded-md text-orange-600 font-medium border border-orange-100">
                                 ✈️ Envío: ₲{Math.round(p.costoEnvioCalculado || 0).toLocaleString('es-PY')}
                               </span>
-                                                                {gananciaItem > 0 && (
+                                                                {gananciaReal > 0 && (
                                                                     <span className="text-[11px] md:text-xs bg-green-50 px-2 py-1 rounded-md text-green-600 font-medium border border-green-100">
-                                  📈 Ganancia: {gananciaItem}%
+                                  📈 Ganancia: {gananciaReal}%
                                 </span>
                                                                 )}
                                                             </div>
