@@ -267,6 +267,11 @@ export default function App() {
 
             const costoEnvioCalculado = (peso * grupo.costoEnvioTotal) / grupo.pesoTotal;
             const costoRealFinal = precio + costoEnvioCalculado;
+            const costoUnitario = costoRealFinal / cantidad;
+
+            // Usamos el precio escrito manualmente si existe
+            const pvIngresado = desformatearGuaranies(form.precioVenta);
+            const precioVentaUnitarioFinal = pvIngresado > 0 ? pvIngresado : Math.round(costoUnitario * (1 + (ganancia / 100)));
 
             const nuevoProducto = {
                 id: generarId(),
@@ -275,9 +280,10 @@ export default function App() {
                 peso: peso,
                 cantidad: cantidad,
                 porcentajeGanancia: ganancia,
+                precioVentaUnitario: precioVentaUnitarioFinal, // AHORA SE GUARDA EN FIREBASE
                 costoEnvioCalculado: costoEnvioCalculado,
                 costoRealFinal: costoRealFinal,
-                vendido: false // Por defecto inicia como En Stock
+                vendido: false
             };
 
             const nuevosProductos = [...grupo.productos, nuevoProducto];
@@ -321,7 +327,9 @@ export default function App() {
     const iniciarEdicionProducto = (producto, grupoActual) => {
         setEditandoProducto(producto.id);
         const costoUnitario = producto.costoRealFinal / (producto.cantidad || 1);
-        const pv = costoUnitario * (1 + ((producto.porcentajeGanancia || 0) / 100));
+
+        // Leemos el precio desde Firebase, si no existe lo calculamos como respaldo
+        const pv = producto.precioVentaUnitario || (costoUnitario * (1 + ((producto.porcentajeGanancia || 0) / 100)));
 
         setProductoEditado({
             nombre: producto.nombre,
@@ -344,6 +352,10 @@ export default function App() {
 
             const costoEnvioCalculado = (peso * grupoActual.costoEnvioTotal) / grupoActual.pesoTotal;
             const costoRealFinal = precio + costoEnvioCalculado;
+            const costoUnitario = costoRealFinal / cantidad;
+
+            const pvIngresado = desformatearGuaranies(productoEditado.precioVenta);
+            const precioVentaUnitarioFinal = pvIngresado > 0 ? pvIngresado : Math.round(costoUnitario * (1 + (ganancia / 100)));
 
             const productosActualizados = grupoActual.productos.map(p => {
                 if (p.id === idProducto) {
@@ -354,6 +366,7 @@ export default function App() {
                         peso: peso,
                         cantidad: cantidad,
                         porcentajeGanancia: ganancia,
+                        precioVentaUnitario: precioVentaUnitarioFinal, // GUARDAMOS LA EDICIÓN EXACTA
                         costoEnvioCalculado: costoEnvioCalculado,
                         costoRealFinal: costoRealFinal
                     };
@@ -370,36 +383,37 @@ export default function App() {
         }
     };
 
-    // Lógica inteligente recíproca (Ganancia <-> Precio de Venta) para edición
+    // Lógica inteligente recíproca
     const handleEdicionInteligente = (campo, valor, grupoActual) => {
         let nuevoEditado = { ...productoEditado };
 
-        // Si editan precio de venta, ajustamos porcentaje
         if (campo === 'precioVenta') {
             const pvNum = desformatearGuaranies(valor);
-            const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
-            let gananciaCalc = 0;
-            if (costoUnit > 0) gananciaCalc = ((pvNum / costoUnit) - 1) * 100;
-
             nuevoEditado.precioVenta = formatearGuaranies(valor);
-            nuevoEditado.ganancia = gananciaCalc.toFixed(1);
+
+            const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
+            if (costoUnit > 0) {
+                nuevoEditado.ganancia = (((pvNum / costoUnit) - 1) * 100).toFixed(1);
+            }
         }
-        // Si editan porcentaje o costos, ajustamos precio de venta
+        else if (campo === 'ganancia') {
+            nuevoEditado.ganancia = valor;
+            const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
+            const gan = parseFloat(valor) || 0;
+            nuevoEditado.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
+        }
         else {
             if (campo === 'precio') nuevoEditado.precio = formatearGuaranies(valor);
             else nuevoEditado[campo] = valor;
 
             const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
-            const ganancia = parseFloat(nuevoEditado.ganancia) || 0;
-            const pvSugerido = costoUnit * (1 + (ganancia / 100));
-
-            nuevoEditado.precioVenta = formatearGuaranies(Math.round(pvSugerido));
+            const gan = parseFloat(nuevoEditado.ganancia) || 0;
+            nuevoEditado.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
         }
 
         setProductoEditado(nuevoEditado);
     };
 
-    // Lógica inteligente para formulario nuevo
     const cambiarProductoFormulario = (idGrupo, campo, valor) => {
         setProductoFormulario(prev => {
             const actual = prev[idGrupo] || {};
@@ -411,7 +425,6 @@ export default function App() {
                 nuevoForm[campo] = valor;
             }
 
-            // Auto-cálculo
             const grupo = grupos.find(g => g.id === idGrupo);
             if (grupo) {
                 const pCompra = desformatearGuaranies(nuevoForm.precio);
@@ -422,9 +435,20 @@ export default function App() {
                 if (campo === 'precioVenta') {
                     const pv = desformatearGuaranies(nuevoForm.precioVenta);
                     if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(1);
-                } else {
+                }
+                else if (campo === 'ganancia') {
                     const gan = parseFloat(nuevoForm.ganancia) || 0;
                     nuevoForm.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
+                }
+                else {
+                    // Si cambian precios/peso pero ya habían escrito un precio de venta manualmente sin porcentaje, calculamos ganancia primero
+                    if (nuevoForm.precioVenta && (!nuevoForm.ganancia || nuevoForm.ganancia === '')) {
+                        const pv = desformatearGuaranies(nuevoForm.precioVenta);
+                        if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(1);
+                    } else {
+                        const gan = parseFloat(nuevoForm.ganancia) || 0;
+                        nuevoForm.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
+                    }
                 }
             }
             return { ...prev, [idGrupo]: nuevoForm };
@@ -442,16 +466,20 @@ export default function App() {
 
     const totalConvertido = desformatearGuaranies(cotizacionDolar) * (parseFloat(cantidadDolar) || 0);
 
-    // --- NUEVO: Cálculo de Resumen de Ventas ---
+    // Cálculo de Resumen de Ventas
     const resumenVentas = useMemo(() => {
         let recuperado = 0;
         let ganancia = 0;
         gruposFiltrados.forEach(g => {
             g.productos.forEach(p => {
                 if (p.vendido) {
-                    recuperado += p.costoRealFinal; // El costo invertido que vuelve a tu bolsillo
-                    const porcentaje = p.porcentajeGanancia || 0;
-                    ganancia += p.costoRealFinal * (porcentaje / 100); // La ganancia pura
+                    recuperado += p.costoRealFinal;
+
+                    const cantidadItem = p.cantidad || 1;
+                    const costoUnitario = p.costoRealFinal / cantidadItem;
+                    const precioVentaUnitario = p.precioVentaUnitario || (costoUnitario * (1 + ((p.porcentajeGanancia || 0) / 100)));
+
+                    ganancia += (precioVentaUnitario * cantidadItem) - p.costoRealFinal;
                 }
             });
         });
@@ -777,9 +805,10 @@ export default function App() {
                                         <p className="text-center text-pink-300 text-sm py-4 italic">No hay productos en este envío todavía.</p>
                                     ) : grupo.productos.map(p => {
                                         const cantidadItem = p.cantidad || 1;
-                                        const gananciaItem = p.porcentajeGanancia || 0;
                                         const costoUnitario = p.costoRealFinal / cantidadItem;
-                                        const precioVentaUnitario = costoUnitario * (1 + (gananciaItem / 100));
+                                        // Ahora priorizamos el precio de venta exacto guardado en Firebase
+                                        const precioVentaUnitario = p.precioVentaUnitario || (costoUnitario * (1 + ((p.porcentajeGanancia || 0) / 100)));
+                                        const gananciaItem = p.precioVentaUnitario ? (((p.precioVentaUnitario / costoUnitario) - 1) * 100).toFixed(1) : (p.porcentajeGanancia || 0);
 
                                         return (
                                             <div key={p.id} className={`bg-white border shadow-sm p-4 rounded-2xl group transition-all ${p.vendido ? 'border-green-200 bg-green-50/10 opacity-90' : 'border-pink-100 hover:border-pink-200'}`}>
