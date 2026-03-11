@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Calendar, Package, Cherry, Loader2, Trash2, Info, DollarSign, Edit2, X, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, Calendar, Package, Cherry, Loader2, Trash2, Info, DollarSign, Edit2, X, Check, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
@@ -245,6 +245,13 @@ export default function App() {
         }
     };
 
+    // --- Funciones Matemáticas para Costos ---
+    const calcularCostoUnitario = (precioTotal, pesoTotalItem, cantidad, grupo) => {
+        const costoEnvio = (pesoTotalItem * grupo.costoEnvioTotal) / (grupo.pesoTotal || 1);
+        const costoFinalTotal = precioTotal + costoEnvio;
+        return costoFinalTotal / (cantidad || 1);
+    };
+
     // Manejadores de Productos
     const agregarProducto = async (idGrupo, e) => {
         e.preventDefault();
@@ -269,14 +276,15 @@ export default function App() {
                 cantidad: cantidad,
                 porcentajeGanancia: ganancia,
                 costoEnvioCalculado: costoEnvioCalculado,
-                costoRealFinal: costoRealFinal
+                costoRealFinal: costoRealFinal,
+                vendido: false // Por defecto inicia como En Stock
             };
 
             const nuevosProductos = [...grupo.productos, nuevoProducto];
             const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
             await updateDoc(referenciaDoc, { productos: nuevosProductos });
 
-            setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '', cantidad: '', ganancia: '' } }));
+            setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '', cantidad: '', ganancia: '', precioVenta: '' } }));
         } catch (error) {
             console.error("Error al guardar producto:", error);
             alert("No se pudo guardar el producto. Firebase dice: " + error.message);
@@ -296,14 +304,32 @@ export default function App() {
         }
     };
 
-    const iniciarEdicionProducto = (producto) => {
+    const toggleVendido = async (idGrupo, idProducto) => {
+        if (!usuario) return;
+        try {
+            const grupo = grupos.find(g => g.id === idGrupo);
+            const productosActualizados = grupo.productos.map(p =>
+                p.id === idProducto ? { ...p, vendido: !p.vendido } : p
+            );
+            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
+            await updateDoc(referenciaDoc, { productos: productosActualizados });
+        } catch (error) {
+            alert("Error al actualizar estado: " + error.message);
+        }
+    };
+
+    const iniciarEdicionProducto = (producto, grupoActual) => {
         setEditandoProducto(producto.id);
+        const costoUnitario = producto.costoRealFinal / (producto.cantidad || 1);
+        const pv = costoUnitario * (1 + ((producto.porcentajeGanancia || 0) / 100));
+
         setProductoEditado({
             nombre: producto.nombre,
             precio: formatearGuaranies(producto.precio),
             peso: producto.peso,
             cantidad: producto.cantidad || 1,
-            ganancia: producto.porcentajeGanancia || 0
+            ganancia: producto.porcentajeGanancia || 0,
+            precioVenta: formatearGuaranies(Math.round(pv))
         });
     };
 
@@ -344,25 +370,93 @@ export default function App() {
         }
     };
 
+    // Lógica inteligente recíproca (Ganancia <-> Precio de Venta) para edición
+    const handleEdicionInteligente = (campo, valor, grupoActual) => {
+        let nuevoEditado = { ...productoEditado };
+
+        // Si editan precio de venta, ajustamos porcentaje
+        if (campo === 'precioVenta') {
+            const pvNum = desformatearGuaranies(valor);
+            const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
+            let gananciaCalc = 0;
+            if (costoUnit > 0) gananciaCalc = ((pvNum / costoUnit) - 1) * 100;
+
+            nuevoEditado.precioVenta = formatearGuaranies(valor);
+            nuevoEditado.ganancia = gananciaCalc.toFixed(1);
+        }
+        // Si editan porcentaje o costos, ajustamos precio de venta
+        else {
+            if (campo === 'precio') nuevoEditado.precio = formatearGuaranies(valor);
+            else nuevoEditado[campo] = valor;
+
+            const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
+            const ganancia = parseFloat(nuevoEditado.ganancia) || 0;
+            const pvSugerido = costoUnit * (1 + (ganancia / 100));
+
+            nuevoEditado.precioVenta = formatearGuaranies(Math.round(pvSugerido));
+        }
+
+        setProductoEditado(nuevoEditado);
+    };
+
+    // Lógica inteligente para formulario nuevo
+    const cambiarProductoFormulario = (idGrupo, campo, valor) => {
+        setProductoFormulario(prev => {
+            const actual = prev[idGrupo] || {};
+            const nuevoForm = { ...actual };
+
+            if (campo === 'precio' || campo === 'precioVenta') {
+                nuevoForm[campo] = formatearGuaranies(valor);
+            } else {
+                nuevoForm[campo] = valor;
+            }
+
+            // Auto-cálculo
+            const grupo = grupos.find(g => g.id === idGrupo);
+            if (grupo) {
+                const pCompra = desformatearGuaranies(nuevoForm.precio);
+                const pPeso = parseFloat(nuevoForm.peso) || 0;
+                const pCant = parseInt(nuevoForm.cantidad) || 1;
+                const costoUnit = calcularCostoUnitario(pCompra, pPeso, pCant, grupo);
+
+                if (campo === 'precioVenta') {
+                    const pv = desformatearGuaranies(nuevoForm.precioVenta);
+                    if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(1);
+                } else {
+                    const gan = parseFloat(nuevoForm.ganancia) || 0;
+                    nuevoForm.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
+                }
+            }
+            return { ...prev, [idGrupo]: nuevoForm };
+        });
+    };
+
     const gruposFiltrados = useMemo(() => {
         if (!filtroFecha) return grupos;
         return grupos.filter(g => g.fecha.includes(filtroFecha));
     }, [grupos, filtroFecha]);
-
-    const cambiarProductoFormulario = (idGrupo, campo, valor) => {
-        const nuevoValor = campo === 'precio' ? formatearGuaranies(valor) : valor;
-
-        setProductoFormulario(prev => ({
-            ...prev,
-            [idGrupo]: { ...prev[idGrupo], [campo]: nuevoValor }
-        }));
-    };
 
     const fechasConGrupos = useMemo(() => {
         return [...new Set(grupos.map(g => g.fecha))];
     }, [grupos]);
 
     const totalConvertido = desformatearGuaranies(cotizacionDolar) * (parseFloat(cantidadDolar) || 0);
+
+    // --- NUEVO: Cálculo de Resumen de Ventas ---
+    const resumenVentas = useMemo(() => {
+        let recuperado = 0;
+        let ganancia = 0;
+        gruposFiltrados.forEach(g => {
+            g.productos.forEach(p => {
+                if (p.vendido) {
+                    recuperado += p.costoRealFinal; // El costo invertido que vuelve a tu bolsillo
+                    const porcentaje = p.porcentajeGanancia || 0;
+                    ganancia += p.costoRealFinal * (porcentaje / 100); // La ganancia pura
+                }
+            });
+        });
+        return { recuperado, ganancia };
+    }, [gruposFiltrados]);
 
     return (
         <div className="min-h-screen bg-pink-50/50 p-3 sm:p-5 md:p-8 font-sans text-slate-700 pb-20">
@@ -375,7 +469,7 @@ export default function App() {
                     </div>
                     <div className="text-center sm:text-left">
                         <h1 className="text-2xl md:text-3xl font-bold text-pink-500 tracking-tight">Cherriecute</h1>
-                        <p className="text-xs md:text-sm text-pink-300 font-medium italic">Calculadora de Costos Reales</p>
+                        <p className="text-xs md:text-sm text-pink-300 font-medium italic">Calculadora y Gestión de Ventas</p>
                     </div>
                 </header>
 
@@ -491,12 +585,36 @@ export default function App() {
 
                         <div className="hidden lg:flex bg-white p-4 rounded-2xl border border-pink-100 text-pink-400 text-xs gap-3 shadow-sm">
                             <Info className="shrink-0" size={18} />
-                            <p>El costo real se calcula distribuyendo el flete proporcionalmente al peso de cada producto.</p>
+                            <p>Las ganancias se calculan sumando el costo base y envío, dividido por la cantidad de items.</p>
                         </div>
                     </aside>
 
-                    {/* Columna Principal (Lista de Grupos) */}
+                    {/* Columna Principal */}
                     <main className="lg:col-span-8 space-y-5">
+
+                        {/* DASHBOARD DE RESUMEN DE VENTAS */}
+                        {!cargando && gruposFiltrados.length > 0 && (
+                            <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100 flex flex-col md:flex-row gap-5 justify-between items-center relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-2 h-full bg-pink-400"></div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-700 flex items-center gap-2"><TrendingUp className="text-pink-500"/> Resumen de Ventas</h3>
+                                    <p className="text-sm text-pink-400 font-medium mt-1">
+                                        {filtroFecha ? `Resultados del ${new Date(filtroFecha).toLocaleDateString('es-PY', { timeZone: 'UTC' })}` : 'Todas las fechas (Total Histórico)'}
+                                    </p>
+                                </div>
+                                <div className="flex flex-wrap sm:flex-nowrap gap-3 w-full md:w-auto">
+                                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl flex-1 md:min-w-[160px]">
+                                        <p className="text-[10px] md:text-xs uppercase font-bold text-slate-400 mb-1">Costos Repuestos</p>
+                                        <p className="text-xl font-black text-slate-600">₲{Math.round(resumenVentas.recuperado).toLocaleString('es-PY')}</p>
+                                    </div>
+                                    <div className="bg-green-50 border border-green-200 p-4 rounded-2xl flex-1 md:min-w-[160px] shadow-sm">
+                                        <p className="text-[10px] md:text-xs uppercase font-bold text-green-500 mb-1">Ganancia Neta</p>
+                                        <p className="text-xl font-black text-green-600">₲{Math.round(resumenVentas.ganancia).toLocaleString('es-PY')}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {cargando ? (
                             <div className="flex flex-col items-center justify-center p-10 md:p-20 text-pink-300">
                                 <Loader2 className="animate-spin mb-4" size={40} />
@@ -578,10 +696,10 @@ export default function App() {
                                     </div>
                                 )}
 
-                                {/* Formulario de Producto Nuevo (Ahora con Cantidad y Ganancia) */}
+                                {/* Formulario de Producto Nuevo (Con autoajuste cruzado) */}
                                 <div className="p-3 md:p-5 bg-pink-50/30 border-b border-pink-100">
                                     <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
-                                        <div className="col-span-2 sm:col-span-3">
+                                        <div className="col-span-2 sm:col-span-5">
                                             <input
                                                 placeholder="Nombre del producto"
                                                 className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
@@ -589,11 +707,11 @@ export default function App() {
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'nombre', e.target.value)}
                                             />
                                         </div>
-                                        <div className="col-span-1 sm:col-span-2">
+                                        <div className="col-span-1 sm:col-span-3">
                                             <input
                                                 type="text"
                                                 inputMode="numeric"
-                                                placeholder="Precio (₲)"
+                                                placeholder="Costo Compra Total (₲)"
                                                 className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.precio || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'precio', e.target.value)}
@@ -602,7 +720,7 @@ export default function App() {
                                         <div className="col-span-1 sm:col-span-2">
                                             <input
                                                 type="number"
-                                                placeholder="Peso(kg)"
+                                                placeholder="Peso Total (kg)"
                                                 step="0.001"
                                                 className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
                                                 value={productoFormulario[grupo.id]?.peso || ''}
@@ -620,17 +738,30 @@ export default function App() {
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'cantidad', e.target.value)}
                                             />
                                         </div>
-                                        <div className="col-span-1 sm:col-span-2">
+
+                                        {/* Segunda Fila Formulario */}
+                                        <div className="col-span-1 sm:col-span-3">
                                             <input
                                                 type="number"
                                                 placeholder="% Ganancia"
                                                 step="0.1"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-green-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-200 outline-none text-green-700 font-bold shadow-sm"
                                                 value={productoFormulario[grupo.id]?.ganancia || ''}
                                                 onChange={(e) => cambiarProductoFormulario(grupo.id, 'ganancia', e.target.value)}
                                             />
                                         </div>
-                                        <div className="col-span-2 sm:col-span-1">
+                                        <div className="col-span-1 sm:col-span-4">
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                placeholder="Precio Venta c/u (₲)"
+                                                className="w-full px-3 py-3 md:px-4 bg-white border border-green-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-200 outline-none text-green-700 font-bold shadow-sm"
+                                                value={productoFormulario[grupo.id]?.precioVenta || ''}
+                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'precioVenta', e.target.value)}
+                                            />
+                                        </div>
+
+                                        <div className="col-span-2 sm:col-span-5">
                                             <button type="submit" className="w-full py-3 h-full bg-pink-200 text-pink-800 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm font-bold gap-2">
                                                 <Plus size={20} className="sm:hidden" />
                                                 <span className="sm:hidden">Agregar Producto</span>
@@ -641,37 +772,36 @@ export default function App() {
                                 </div>
 
                                 {/* Lista de Productos */}
-                                <div className="p-3 md:p-5 space-y-3">
+                                <div className="p-3 md:p-5 space-y-3 bg-slate-50/30">
                                     {grupo.productos.length === 0 ? (
                                         <p className="text-center text-pink-300 text-sm py-4 italic">No hay productos en este envío todavía.</p>
                                     ) : grupo.productos.map(p => {
-                                        // --- NUEVOS CÁLCULOS UNITARIOS ---
                                         const cantidadItem = p.cantidad || 1;
                                         const gananciaItem = p.porcentajeGanancia || 0;
                                         const costoUnitario = p.costoRealFinal / cantidadItem;
                                         const precioVentaUnitario = costoUnitario * (1 + (gananciaItem / 100));
 
                                         return (
-                                            <div key={p.id} className="bg-white border border-pink-100 shadow-sm p-4 rounded-2xl group hover:border-pink-200 transition-colors">
+                                            <div key={p.id} className={`bg-white border shadow-sm p-4 rounded-2xl group transition-all ${p.vendido ? 'border-green-200 bg-green-50/10 opacity-90' : 'border-pink-100 hover:border-pink-200'}`}>
                                                 {editandoProducto === p.id ? (
                                                     // MODO EDICIÓN PRODUCTO
                                                     <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
-                                                        <div className="col-span-2 sm:col-span-3">
+                                                        <div className="col-span-2 sm:col-span-5">
                                                             <input
                                                                 className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
                                                                 value={productoEditado.nombre}
-                                                                onChange={(e) => setProductoEditado({...productoEditado, nombre: e.target.value})}
+                                                                onChange={(e) => handleEdicionInteligente('nombre', e.target.value, grupo)}
                                                                 placeholder="Nombre"
                                                             />
                                                         </div>
-                                                        <div className="col-span-1 sm:col-span-2">
+                                                        <div className="col-span-1 sm:col-span-3">
                                                             <input
                                                                 type="text"
                                                                 inputMode="numeric"
                                                                 className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
                                                                 value={productoEditado.precio}
-                                                                onChange={(e) => setProductoEditado({...productoEditado, precio: formatearGuaranies(e.target.value)})}
-                                                                placeholder="Total (₲)"
+                                                                onChange={(e) => handleEdicionInteligente('precio', e.target.value, grupo)}
+                                                                placeholder="Compra Total (₲)"
                                                             />
                                                         </div>
                                                         <div className="col-span-1 sm:col-span-2">
@@ -680,7 +810,7 @@ export default function App() {
                                                                 step="0.001"
                                                                 className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
                                                                 value={productoEditado.peso}
-                                                                onChange={(e) => setProductoEditado({...productoEditado, peso: e.target.value})}
+                                                                onChange={(e) => handleEdicionInteligente('peso', e.target.value, grupo)}
                                                                 placeholder="Peso Total"
                                                             />
                                                         </div>
@@ -691,21 +821,31 @@ export default function App() {
                                                                 step="1"
                                                                 className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
                                                                 value={productoEditado.cantidad}
-                                                                onChange={(e) => setProductoEditado({...productoEditado, cantidad: e.target.value})}
+                                                                onChange={(e) => handleEdicionInteligente('cantidad', e.target.value, grupo)}
                                                                 placeholder="Cant."
                                                             />
                                                         </div>
-                                                        <div className="col-span-1 sm:col-span-2">
+                                                        <div className="col-span-1 sm:col-span-3">
                                                             <input
                                                                 type="number"
                                                                 step="0.1"
-                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
+                                                                className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-300 outline-none text-green-700 font-bold"
                                                                 value={productoEditado.ganancia}
-                                                                onChange={(e) => setProductoEditado({...productoEditado, ganancia: e.target.value})}
+                                                                onChange={(e) => handleEdicionInteligente('ganancia', e.target.value, grupo)}
                                                                 placeholder="% Ganancia"
                                                             />
                                                         </div>
-                                                        <div className="col-span-2 sm:col-span-1 flex gap-1 justify-end items-center mt-2 sm:mt-0">
+                                                        <div className="col-span-1 sm:col-span-4">
+                                                            <input
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-300 outline-none text-green-700 font-bold"
+                                                                value={productoEditado.precioVenta}
+                                                                onChange={(e) => handleEdicionInteligente('precioVenta', e.target.value, grupo)}
+                                                                placeholder="Venta c/u (₲)"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-2 sm:col-span-5 flex gap-1 justify-end items-center mt-2 sm:mt-0">
                                                             <button onClick={() => setEditandoProducto(null)} className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors flex-1 flex justify-center">
                                                                 <X size={18} />
                                                             </button>
@@ -715,13 +855,13 @@ export default function App() {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    // MODO VISTA PRODUCTO (Renovado con Mini-Dashboard)
+                                                    // MODO VISTA PRODUCTO
                                                     <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
 
                                                         {/* Detalles del Producto */}
                                                         <div className="flex-1 min-w-0 w-full">
                                                             <div className="flex items-center gap-2">
-                                                                <p className="font-bold text-slate-600 text-base md:text-lg truncate" title={p.nombre}>{p.nombre}</p>
+                                                                <p className={`font-bold text-base md:text-lg truncate ${p.vendido ? 'text-green-700' : 'text-slate-600'}`} title={p.nombre}>{p.nombre}</p>
                                                                 {cantidadItem > 1 && (
                                                                     <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-bold shadow-sm">
                                   x{cantidadItem}
@@ -729,7 +869,6 @@ export default function App() {
                                                                 )}
                                                             </div>
 
-                                                            {/* Desglose de los Costos Totales Iniciales */}
                                                             <div className="flex flex-wrap gap-2 mt-2">
                               <span className="text-[11px] md:text-xs bg-slate-50 px-2 py-1 rounded-md text-slate-500 font-medium border border-slate-100">
                                 ⚖️ Peso Total: {p.peso}kg
@@ -749,10 +888,10 @@ export default function App() {
                                                         </div>
 
                                                         {/* Mini-Dashboard de Resultados Reales y Venta */}
-                                                        <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 w-full lg:w-auto">
+                                                        <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 w-full lg:w-auto mt-2 lg:mt-0">
 
                                                             <div className="bg-slate-50 p-2 md:p-3 rounded-xl border border-slate-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
-                                                                <p className="text-[9px] uppercase font-bold text-slate-400">Costo Final Total</p>
+                                                                <p className="text-[9px] uppercase font-bold text-slate-400">Total Invertido</p>
                                                                 <p className="text-sm font-bold text-slate-600">₲{Math.round(p.costoRealFinal).toLocaleString('es-PY')}</p>
                                                             </div>
 
@@ -766,21 +905,30 @@ export default function App() {
                                                                 <p className="text-base md:text-xl font-black text-green-600">₲{Math.round(precioVentaUnitario).toLocaleString('es-PY')}</p>
                                                             </div>
 
-                                                            {/* Botones de acción lateral */}
+                                                            {/* Botones de Acción (Stock, Edit, Delete) */}
                                                             <div className="flex flex-row sm:flex-col gap-1 shrink-0 justify-center w-full sm:w-auto mt-2 sm:mt-0">
+                                                                <div className="flex gap-1 flex-1 sm:flex-none">
+                                                                    <button
+                                                                        onClick={() => iniciarEdicionProducto(p, grupo)}
+                                                                        className="flex-1 sm:flex-none flex justify-center text-pink-400 hover:text-blue-500 bg-white hover:bg-blue-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-pink-100 hover:border-blue-100"
+                                                                        title="Editar producto"
+                                                                    >
+                                                                        <Edit2 size={16} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => borrarProducto(grupo.id, p.id)}
+                                                                        className="flex-1 sm:flex-none flex justify-center text-pink-400 hover:text-red-500 bg-white hover:bg-red-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-pink-100 hover:border-red-100"
+                                                                        title="Eliminar producto"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                    </button>
+                                                                </div>
                                                                 <button
-                                                                    onClick={() => iniciarEdicionProducto(p)}
-                                                                    className="flex-1 sm:flex-none flex justify-center text-pink-300 hover:text-blue-500 bg-white hover:bg-blue-50 rounded-lg sm:rounded-full p-2 transition-colors border border-pink-50 hover:border-blue-100"
-                                                                    title="Editar producto"
+                                                                    onClick={() => toggleVendido(grupo.id, p.id)}
+                                                                    className={`flex-1 sm:flex-none flex items-center justify-center gap-1 p-2 rounded-xl transition-colors text-xs font-bold shadow-sm border
+                                  ${p.vendido ? 'bg-green-500 text-white border-green-600 hover:bg-green-600' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-green-500'}`}
                                                                 >
-                                                                    <Edit2 size={16} />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => borrarProducto(grupo.id, p.id)}
-                                                                    className="flex-1 sm:flex-none flex justify-center text-pink-300 hover:text-red-400 bg-white hover:bg-red-50 rounded-lg sm:rounded-full p-2 transition-colors border border-pink-50 hover:border-red-100"
-                                                                    title="Eliminar producto"
-                                                                >
-                                                                    <Trash2 size={16} />
+                                                                    {p.vendido ? <><Check size={14}/> Vendido</> : '⏳ En Stock'}
                                                                 </button>
                                                             </div>
 
