@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Plus, Calendar, Package, Cherry, Loader2, Trash2, Info, DollarSign, Edit2, X, Check, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
+import { Search, Plus, Calendar, Package, Cherry, Loader2, Trash2, Info, DollarSign, Edit2, X, Check, ChevronLeft, ChevronRight, TrendingUp, ShoppingBag } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
@@ -31,7 +31,7 @@ const desformatearGuaranies = (valor) => {
 };
 
 // --- COMPONENTE: Calendario Visual ---
-const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccionada }) => {
+const CalendarioWidget = ({ fechasActivas, fechaSeleccionada, setFechaSeleccionada }) => {
     const [fechaVista, setFechaVista] = useState(new Date());
 
     const mesActual = fechaVista.getMonth();
@@ -50,7 +50,6 @@ const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccio
     };
 
     const nombreMes = fechaVista.toLocaleDateString('es-PY', { month: 'long', year: 'numeric' });
-
     const hoy = new Date();
     const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
 
@@ -69,7 +68,7 @@ const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccio
                 {Array.from({ length: diasEnMes }).map((_, i) => {
                     const dia = i + 1;
                     const fechaStr = formatearFechaStr(dia);
-                    const tieneGrupo = fechasConGrupos.includes(fechaStr);
+                    const tieneActividad = fechasActivas.includes(fechaStr);
                     const esSeleccionado = fechaSeleccionada === fechaStr;
                     const esHoy = hoyStr === fechaStr;
 
@@ -82,11 +81,11 @@ const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccio
                 h-9 w-full rounded-xl text-sm font-medium flex items-center justify-center relative transition-all
                 ${esSeleccionado ? 'bg-pink-500 text-white shadow-md' : 'hover:bg-pink-100 text-slate-600'}
                 ${esHoy && !esSeleccionado ? 'border border-pink-300 text-pink-600' : ''}
-                ${tieneGrupo && !esSeleccionado ? 'bg-pink-50' : ''}
+                ${tieneActividad && !esSeleccionado ? 'bg-pink-50' : ''}
               `}
                         >
                             {dia}
-                            {tieneGrupo && (
+                            {tieneActividad && (
                                 <span className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${esSeleccionado ? 'bg-white' : 'bg-pink-400'}`}></span>
                             )}
                         </button>
@@ -96,42 +95,56 @@ const CalendarioWidget = ({ fechasConGrupos, fechaSeleccionada, setFechaSeleccio
         </div>
     );
 };
-// -------------------------------------------
 
 export default function App() {
     const [usuario, setUsuario] = useState(null);
     const [cargando, setCargando] = useState(true);
+
+    // Base de datos local
     const [grupos, setGrupos] = useState([]);
+    const [productosInd, setProductosInd] = useState([]); // Nuevo estado para Sueltos
     const [filtroFecha, setFiltroFecha] = useState('');
 
-    // Estados para nuevos registros
+    // Selector de Modo (Grupos o Sueltos)
+    const [modoRegistro, setModoRegistro] = useState('grupo');
+
+    // Estados Formulario: Grupos
     const [nuevaFecha, setNuevaFecha] = useState('');
     const [nuevoCostoEnvio, setNuevoCostoEnvio] = useState('');
     const [nuevoPesoTotal, setNuevoPesoTotal] = useState('');
     const [productoFormulario, setProductoFormulario] = useState({});
 
-    // Estados para la convertidora de Dólares
+    // Estados Formulario: Sueltos
+    const [indFecha, setIndFecha] = useState('');
+    const [indNombre, setIndNombre] = useState('');
+    const [indCompra, setIndCompra] = useState('');
+    const [indVenta, setIndVenta] = useState('');
+    const [indCantidad, setIndCantidad] = useState('');
+
+    // Convertidora
     const [cotizacionDolar, setCotizacionDolar] = useState('');
     const [cantidadDolar, setCantidadDolar] = useState('');
 
-    // Estados para Edición
+    // Estados Edición Grupos
     const [editandoGrupo, setEditandoGrupo] = useState(null);
     const [grupoEditado, setGrupoEditado] = useState({});
     const [editandoProducto, setEditandoProducto] = useState(null);
     const [productoEditado, setProductoEditado] = useState({});
 
-    // Generador de ID seguro
+    // Estados Edición Sueltos
+    const [editandoInd, setEditandoInd] = useState(null);
+    const [indEditado, setIndEditado] = useState({});
+
     const generarId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
 
     useEffect(() => {
-        // Autenticación mejorada
         const desuscribir = onAuthStateChanged(auth, (user) => {
             if (user) {
                 setUsuario(user);
             } else {
                 signInAnonymously(auth).catch((error) => {
                     console.error("Error al iniciar sesión:", error);
-                    alert("Error de conexión con Firebase Auth: " + error.message);
+                    alert("Error Auth: " + error.message);
                     setCargando(false);
                 });
             }
@@ -143,37 +156,36 @@ export default function App() {
         if (!usuario) return;
 
         try {
-            const referenciaGrupos = collection(bd, 'gruposEnvio');
+            const refGrupos = collection(bd, 'gruposEnvio');
+            const refInd = collection(bd, 'productosIndividuales');
 
-            const desuscribir = onSnapshot(referenciaGrupos, (instantanea) => {
-                const gruposCargados = [];
-                instantanea.forEach((documento) => {
-                    gruposCargados.push({ id: documento.id, ...documento.data() });
-                });
-                gruposCargados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-                setGrupos(gruposCargados);
-                setCargando(false);
-            }, (error) => {
-                console.error("Error al leer datos:", error);
-                alert("Error al intentar leer tus datos: " + error.message);
+            const unsubGrupos = onSnapshot(refGrupos, (snap) => {
+                const arr = [];
+                snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+                arr.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+                setGrupos(arr);
                 setCargando(false);
             });
 
-            return () => desuscribir();
+            const unsubInd = onSnapshot(refInd, (snap) => {
+                const arr = [];
+                snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+                setProductosInd(arr);
+            });
+
+            return () => { unsubGrupos(); unsubInd(); };
         } catch (error) {
-            alert("Error crítico al conectar con la base de datos: " + error.message);
+            alert("Error crítico BD: " + error.message);
             setCargando(false);
         }
     }, [usuario]);
 
-    // Manejadores de Grupos
+    // ==========================================
+    // MANEJADORES: GRUPOS
+    // ==========================================
     const agregarGrupo = async (e) => {
         e.preventDefault();
-        if (!nuevaFecha || !nuevoCostoEnvio || !nuevoPesoTotal || !usuario) {
-            alert("Por favor completa todos los campos del grupo.");
-            return;
-        }
-
+        if (!nuevaFecha || !nuevoCostoEnvio || !nuevoPesoTotal || !usuario) return;
         try {
             const nuevoGrupo = {
                 fecha: nuevaFecha,
@@ -182,77 +194,81 @@ export default function App() {
                 productos: [],
                 creadoPor: usuario.uid
             };
-
-            const nuevaReferencia = doc(collection(bd, 'gruposEnvio'));
-            await setDoc(nuevaReferencia, nuevoGrupo);
-
-            setNuevaFecha('');
-            setNuevoCostoEnvio('');
-            setNuevoPesoTotal('');
-        } catch (error) {
-            console.error("Error al guardar grupo:", error);
-            alert("No se pudo guardar el grupo. Revisa tus reglas de Firebase.");
-        }
+            await setDoc(doc(collection(bd, 'gruposEnvio')), nuevoGrupo);
+            setNuevaFecha(''); setNuevoCostoEnvio(''); setNuevoPesoTotal('');
+        } catch (error) { alert("Error: " + error.message); }
     };
 
     const borrarGrupo = async (id) => {
-        if (!usuario) return;
-        if (!window.confirm("¿Estás segura de eliminar este grupo entero?")) return;
-        try {
-            const referenciaDoc = doc(bd, 'gruposEnvio', id);
-            await deleteDoc(referenciaDoc);
-        } catch (error) {
-            alert("Error al borrar el grupo: " + error.message);
-        }
+        if (!usuario || !window.confirm("¿Segura de eliminar este grupo entero?")) return;
+        await deleteDoc(doc(bd, 'gruposEnvio', id));
     };
 
-    const iniciarEdicionGrupo = (grupo) => {
-        setEditandoGrupo(grupo.id);
-        setGrupoEditado({
-            fecha: grupo.fecha,
-            costoEnvioTotal: formatearGuaranies(grupo.costoEnvioTotal),
-            pesoTotal: grupo.pesoTotal
+    // ==========================================
+    // MANEJADORES: PRODUCTOS INDIVIDUALES (SUELTOS)
+    // ==========================================
+    const agregarProductoInd = async (e) => {
+        e.preventDefault();
+        if (!indFecha || !indNombre || !indCompra || !indVenta || !usuario) {
+            alert("Completa los datos del producto suelto."); return;
+        }
+        try {
+            const nuevoSuelto = {
+                fecha: indFecha,
+                nombre: indNombre,
+                precioCompra: desformatearGuaranies(indCompra),
+                precioVenta: desformatearGuaranies(indVenta),
+                cantidad: parseInt(indCantidad) || 1,
+                vendido: false,
+                creadoPor: usuario.uid
+            };
+            await setDoc(doc(collection(bd, 'productosIndividuales')), nuevoSuelto);
+            setIndNombre(''); setIndCompra(''); setIndVenta(''); setIndCantidad('');
+        } catch (error) { alert("Error: " + error.message); }
+    };
+
+    const borrarProductoInd = async (id) => {
+        if (!usuario) return;
+        await deleteDoc(doc(bd, 'productosIndividuales', id));
+    };
+
+    const toggleVendidoInd = async (id, estadoActual) => {
+        if (!usuario) return;
+        await updateDoc(doc(bd, 'productosIndividuales', id), { vendido: !estadoActual });
+    };
+
+    const iniciarEdicionInd = (p) => {
+        setEditandoInd(p.id);
+        setIndEditado({
+            nombre: p.nombre,
+            precioCompra: formatearGuaranies(p.precioCompra),
+            precioVenta: formatearGuaranies(p.precioVenta),
+            cantidad: p.cantidad || 1
         });
     };
 
-    const guardarEdicionGrupo = async (idGrupo) => {
+    const guardarEdicionInd = async (id) => {
         if (!usuario) return;
         try {
-            const grupoActual = grupos.find(g => g.id === idGrupo);
-            const nuevoCostoEnvio = desformatearGuaranies(grupoEditado.costoEnvioTotal);
-            const nuevoPesoTotal = parseFloat(grupoEditado.pesoTotal);
-
-            const productosActualizados = grupoActual.productos.map(p => {
-                const costoEnvioCalculado = (p.peso * nuevoCostoEnvio) / (nuevoPesoTotal || 1);
-                return {
-                    ...p,
-                    costoEnvioCalculado: costoEnvioCalculado,
-                    costoRealFinal: p.precio + costoEnvioCalculado
-                };
+            await updateDoc(doc(bd, 'productosIndividuales', id), {
+                nombre: indEditado.nombre,
+                precioCompra: desformatearGuaranies(indEditado.precioCompra),
+                precioVenta: desformatearGuaranies(indEditado.precioVenta),
+                cantidad: parseInt(indEditado.cantidad) || 1
             });
-
-            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
-            await updateDoc(referenciaDoc, {
-                fecha: grupoEditado.fecha,
-                costoEnvioTotal: nuevoCostoEnvio,
-                pesoTotal: nuevoPesoTotal,
-                productos: productosActualizados
-            });
-
-            setEditandoGrupo(null);
-        } catch (error) {
-            alert("Error al editar el grupo: " + error.message);
-        }
+            setEditandoInd(null);
+        } catch (error) { alert("Error: " + error.message); }
     };
 
-    // --- Funciones Matemáticas para Costos ---
+    // ==========================================
+    // MANEJADORES: PRODUCTOS EN GRUPO (Lo que ya tenías)
+    // ==========================================
     const calcularCostoUnitario = (precioTotal, pesoTotalItem, cantidad, grupo) => {
         const costoEnvio = (pesoTotalItem * grupo.costoEnvioTotal) / (grupo.pesoTotal || 1);
         const costoFinalTotal = precioTotal + costoEnvio;
         return costoFinalTotal / (cantidad || 1);
     };
 
-    // Manejadores de Productos
     const agregarProducto = async (idGrupo, e) => {
         e.preventDefault();
         const form = productoFormulario[idGrupo];
@@ -269,7 +285,6 @@ export default function App() {
             const costoRealFinal = precio + costoEnvioCalculado;
             const costoUnitario = costoRealFinal / cantidad;
 
-            // Usamos el precio escrito manualmente si existe, sino el calculado
             const pvIngresado = desformatearGuaranies(form.precioVenta);
             const precioVentaUnitarioFinal = pvIngresado > 0 ? pvIngresado : Math.round(costoUnitario * (1 + (ganancia / 100)));
 
@@ -280,55 +295,35 @@ export default function App() {
                 peso: peso,
                 cantidad: cantidad,
                 porcentajeGanancia: ganancia,
-                precioVentaUnitario: precioVentaUnitarioFinal, // AHORA SE GUARDA EN FIREBASE
+                precioVentaUnitario: precioVentaUnitarioFinal,
                 costoEnvioCalculado: costoEnvioCalculado,
                 costoRealFinal: costoRealFinal,
                 vendido: false
             };
 
             const nuevosProductos = [...grupo.productos, nuevoProducto];
-            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
-            await updateDoc(referenciaDoc, { productos: nuevosProductos });
-
+            await updateDoc(doc(bd, 'gruposEnvio', idGrupo), { productos: nuevosProductos });
             setProductoFormulario(prev => ({ ...prev, [idGrupo]: { nombre: '', precio: '', peso: '', cantidad: '', ganancia: '', precioVenta: '' } }));
-        } catch (error) {
-            console.error("Error al guardar producto:", error);
-            alert("No se pudo guardar el producto. Firebase dice: " + error.message);
-        }
+        } catch (error) { alert("Error: " + error.message); }
     };
 
     const borrarProducto = async (idGrupo, idProducto) => {
         if (!usuario) return;
-        try {
-            const grupo = grupos.find(g => g.id === idGrupo);
-            const nuevosProductos = grupo.productos.filter(p => p.id !== idProducto);
-
-            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
-            await updateDoc(referenciaDoc, { productos: nuevosProductos });
-        } catch (error) {
-            alert("Error al borrar el producto: " + error.message);
-        }
+        const grupo = grupos.find(g => g.id === idGrupo);
+        const nuevosProductos = grupo.productos.filter(p => p.id !== idProducto);
+        await updateDoc(doc(bd, 'gruposEnvio', idGrupo), { productos: nuevosProductos });
     };
 
     const toggleVendido = async (idGrupo, idProducto) => {
         if (!usuario) return;
-        try {
-            const grupo = grupos.find(g => g.id === idGrupo);
-            const productosActualizados = grupo.productos.map(p =>
-                p.id === idProducto ? { ...p, vendido: !p.vendido } : p
-            );
-            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
-            await updateDoc(referenciaDoc, { productos: productosActualizados });
-        } catch (error) {
-            alert("Error al actualizar estado: " + error.message);
-        }
+        const grupo = grupos.find(g => g.id === idGrupo);
+        const productosActualizados = grupo.productos.map(p => p.id === idProducto ? { ...p, vendido: !p.vendido } : p);
+        await updateDoc(doc(bd, 'gruposEnvio', idGrupo), { productos: productosActualizados });
     };
 
     const iniciarEdicionProducto = (producto, grupoActual) => {
         setEditandoProducto(producto.id);
         const costoUnitario = producto.costoRealFinal / (producto.cantidad || 1);
-
-        // Leemos el precio exacto desde Firebase
         const pv = producto.precioVentaUnitario || (costoUnitario * (1 + ((producto.porcentajeGanancia || 0) / 100)));
 
         setProductoEditado({
@@ -337,7 +332,7 @@ export default function App() {
             peso: producto.peso,
             cantidad: producto.cantidad || 1,
             ganancia: producto.porcentajeGanancia || 0,
-            precioVenta: formatearGuaranies(pv) // Aseguramos que sea el valor exacto, sin redondear prematuramente
+            precioVenta: formatearGuaranies(pv)
         });
     };
 
@@ -359,61 +354,35 @@ export default function App() {
 
             const productosActualizados = grupoActual.productos.map(p => {
                 if (p.id === idProducto) {
-                    return {
-                        ...p,
-                        nombre: productoEditado.nombre,
-                        precio: precio,
-                        peso: peso,
-                        cantidad: cantidad,
-                        porcentajeGanancia: ganancia,
-                        precioVentaUnitario: precioVentaUnitarioFinal, // GUARDAMOS LA EDICIÓN EXACTA
-                        costoEnvioCalculado: costoEnvioCalculado,
-                        costoRealFinal: costoRealFinal
-                    };
+                    return { ...p, nombre: productoEditado.nombre, precio: precio, peso: peso, cantidad: cantidad, porcentajeGanancia: ganancia, precioVentaUnitario: precioVentaUnitarioFinal, costoEnvioCalculado: costoEnvioCalculado, costoRealFinal: costoRealFinal };
                 }
                 return p;
             });
 
-            const referenciaDoc = doc(bd, 'gruposEnvio', idGrupo);
-            await updateDoc(referenciaDoc, { productos: productosActualizados });
-
+            await updateDoc(doc(bd, 'gruposEnvio', idGrupo), { productos: productosActualizados });
             setEditandoProducto(null);
-        } catch (error) {
-            alert("Error al editar el producto: " + error.message);
-        }
+        } catch (error) { alert("Error: " + error.message); }
     };
 
-    // Lógica inteligente recíproca MEJORADA: Evita pérdida de precisión
     const handleEdicionInteligente = (campo, valor, grupoActual) => {
         let nuevoEditado = { ...productoEditado };
-
         if (campo === 'precioVenta') {
-            // Si el usuario edita el precio de venta manualmente, actualizamos el texto formateado
             nuevoEditado.precioVenta = formatearGuaranies(valor);
-
-            // Y calculamos el nuevo porcentaje de ganancia para mostrárselo
             const pvNum = desformatearGuaranies(valor);
             const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
-
-            if (costoUnit > 0) {
-                nuevoEditado.ganancia = (((pvNum / costoUnit) - 1) * 100).toFixed(2); // Usamos 2 decimales temporalmente para precisión
-            }
-        }
-        else if (campo === 'ganancia') {
+            if (costoUnit > 0) nuevoEditado.ganancia = (((pvNum / costoUnit) - 1) * 100).toFixed(2);
+        } else if (campo === 'ganancia') {
             nuevoEditado.ganancia = valor;
             const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
             const gan = parseFloat(valor) || 0;
             nuevoEditado.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
-        }
-        else {
+        } else {
             if (campo === 'precio') nuevoEditado.precio = formatearGuaranies(valor);
             else nuevoEditado[campo] = valor;
-
             const costoUnit = calcularCostoUnitario(desformatearGuaranies(nuevoEditado.precio), parseFloat(nuevoEditado.peso), parseInt(nuevoEditado.cantidad), grupoActual);
             const gan = parseFloat(nuevoEditado.ganancia) || 0;
             nuevoEditado.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
         }
-
         setProductoEditado(nuevoEditado);
     };
 
@@ -421,12 +390,8 @@ export default function App() {
         setProductoFormulario(prev => {
             const actual = prev[idGrupo] || {};
             const nuevoForm = { ...actual };
-
-            if (campo === 'precio' || campo === 'precioVenta') {
-                nuevoForm[campo] = formatearGuaranies(valor);
-            } else {
-                nuevoForm[campo] = valor;
-            }
+            if (campo === 'precio' || campo === 'precioVenta') nuevoForm[campo] = formatearGuaranies(valor);
+            else nuevoForm[campo] = valor;
 
             const grupo = grupos.find(g => g.id === idGrupo);
             if (grupo) {
@@ -438,13 +403,10 @@ export default function App() {
                 if (campo === 'precioVenta') {
                     const pv = desformatearGuaranies(nuevoForm.precioVenta);
                     if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(2);
-                }
-                else if (campo === 'ganancia') {
+                } else if (campo === 'ganancia') {
                     const gan = parseFloat(nuevoForm.ganancia) || 0;
                     nuevoForm.precioVenta = formatearGuaranies(Math.round(costoUnit * (1 + (gan / 100))));
-                }
-                else {
-                    // Mantenemos el cálculo de la ganancia en base al precio de venta si ya se había ingresado uno
+                } else {
                     if (nuevoForm.precioVenta && campo !== 'ganancia') {
                         const pv = desformatearGuaranies(nuevoForm.precioVenta);
                         if (costoUnit > 0) nuevoForm.ganancia = (((pv / costoUnit) - 1) * 100).toFixed(2);
@@ -458,37 +420,91 @@ export default function App() {
         });
     };
 
+    const guardarEdicionGrupo = async (idGrupo) => {
+        if (!usuario) return;
+        try {
+            const grupoActual = grupos.find(g => g.id === idGrupo);
+            const nuevoCostoEnvio = desformatearGuaranies(grupoEditado.costoEnvioTotal);
+            const nuevoPesoTotal = parseFloat(grupoEditado.pesoTotal);
+
+            const productosActualizados = grupoActual.productos.map(p => {
+                const costoEnvioCalculado = (p.peso * nuevoCostoEnvio) / (nuevoPesoTotal || 1);
+                return {
+                    ...p,
+                    costoEnvioCalculado: costoEnvioCalculado,
+                    costoRealFinal: p.precio + costoEnvioCalculado
+                };
+            });
+
+            await updateDoc(doc(bd, 'gruposEnvio', idGrupo), {
+                fecha: grupoEditado.fecha,
+                costoEnvioTotal: nuevoCostoEnvio,
+                pesoTotal: nuevoPesoTotal,
+                productos: productosActualizados
+            });
+            setEditandoGrupo(null);
+        } catch (error) { alert("Error: " + error.message); }
+    };
+
+    // ==========================================
+    // LÓGICA DE VISTAS Y CÁLCULOS
+    // ==========================================
     const gruposFiltrados = useMemo(() => {
         if (!filtroFecha) return grupos;
-        return grupos.filter(g => g.fecha.includes(filtroFecha));
+        return grupos.filter(g => g.fecha === filtroFecha);
     }, [grupos, filtroFecha]);
 
-    const fechasConGrupos = useMemo(() => {
-        return [...new Set(grupos.map(g => g.fecha))];
-    }, [grupos]);
+    const productosIndFiltrados = useMemo(() => {
+        if (!filtroFecha) return productosInd;
+        return productosInd.filter(p => p.fecha === filtroFecha);
+    }, [productosInd, filtroFecha]);
+
+    const indPorFecha = useMemo(() => {
+        const agrupados = {};
+        productosIndFiltrados.forEach(p => {
+            if (!agrupados[p.fecha]) agrupados[p.fecha] = [];
+            agrupados[p.fecha].push(p);
+        });
+        return Object.entries(agrupados).sort((a,b) => new Date(b[0]) - new Date(a[0]));
+    }, [productosIndFiltrados]);
+
+    const fechasActivas = useMemo(() => {
+        const todas = [...grupos.map(g => g.fecha), ...productosInd.map(p => p.fecha)];
+        return [...new Set(todas)];
+    }, [grupos, productosInd]);
 
     const totalConvertido = desformatearGuaranies(cotizacionDolar) * (parseFloat(cantidadDolar) || 0);
 
-    // Cálculo de Resumen de Ventas
     const resumenVentas = useMemo(() => {
         let recuperado = 0;
         let ganancia = 0;
+
+        // Sumar de Grupos
         gruposFiltrados.forEach(g => {
             g.productos.forEach(p => {
                 if (p.vendido) {
                     recuperado += p.costoRealFinal;
-
                     const cantidadItem = p.cantidad || 1;
                     const costoUnitario = p.costoRealFinal / cantidadItem;
-                    // Aseguramos leer el precio guardado en Firebase o calcularlo como fallback
                     const precioVentaUnitario = p.precioVentaUnitario || (costoUnitario * (1 + ((p.porcentajeGanancia || 0) / 100)));
-
                     ganancia += (precioVentaUnitario * cantidadItem) - p.costoRealFinal;
                 }
             });
         });
+
+        // Sumar de Sueltos
+        productosIndFiltrados.forEach(p => {
+            if (p.vendido) {
+                const cantidadItem = p.cantidad || 1;
+                const costoTotal = p.precioCompra * cantidadItem;
+                const ventaTotal = p.precioVenta * cantidadItem;
+                recuperado += costoTotal;
+                ganancia += (ventaTotal - costoTotal);
+            }
+        });
+
         return { recuperado, ganancia };
-    }, [gruposFiltrados]);
+    }, [gruposFiltrados, productosIndFiltrados]);
 
     return (
         <div className="min-h-screen bg-pink-50/50 p-3 sm:p-5 md:p-8 font-sans text-slate-700 pb-20">
@@ -510,122 +526,105 @@ export default function App() {
                     {/* Columna Lateral */}
                     <aside className="lg:col-span-4 space-y-5">
 
-                        {/* Convertidora de Moneda */}
+                        {/* Convertidora */}
                         <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100 space-y-4">
                             <h2 className="text-base md:text-lg font-semibold text-slate-600 flex items-center gap-2">
-                                <div className="bg-green-100 p-1.5 rounded-full">
-                                    <DollarSign size={18} className="text-green-500" />
-                                </div>
+                                <div className="bg-green-100 p-1.5 rounded-full"><DollarSign size={18} className="text-green-500" /></div>
                                 Convertidora a Guaraníes
                             </h2>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-[10px] md:text-xs font-bold text-slate-400 ml-2 uppercase">Cambio BCP/Banco</label>
-                                    <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        value={cotizacionDolar}
-                                        onChange={(e) => setCotizacionDolar(formatearGuaranies(e.target.value))}
-                                        placeholder="Ej. 7.300"
-                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
-                                    />
+                                    <input type="text" inputMode="numeric" value={cotizacionDolar} onChange={(e) => setCotizacionDolar(formatearGuaranies(e.target.value))} placeholder="Ej. 7.300" className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] md:text-xs font-bold text-slate-400 ml-2 uppercase">Cant. en USD ($)</label>
-                                    <input
-                                        type="number"
-                                        value={cantidadDolar}
-                                        onChange={(e) => setCantidadDolar(e.target.value)}
-                                        placeholder="Ej. 25.50"
-                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
-                                    />
+                                    <input type="number" value={cantidadDolar} onChange={(e) => setCantidadDolar(e.target.value)} placeholder="Ej. 25.50" className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200" />
                                 </div>
                             </div>
                             <div className="bg-pink-50 border border-pink-100 p-3 md:p-4 rounded-2xl flex flex-col items-center justify-center">
                                 <span className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">Equivale a</span>
-                                <span className="text-2xl md:text-3xl font-black text-pink-500">
-              ₲{totalConvertido.toLocaleString('es-PY')}
-            </span>
+                                <span className="text-2xl md:text-3xl font-black text-pink-500">₲{totalConvertido.toLocaleString('es-PY')}</span>
                             </div>
                         </div>
 
-                        {/* Calendario Visual */}
+                        {/* Calendario */}
                         <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100 space-y-3">
                             <div className="flex justify-between items-center">
                                 <h2 className="text-base md:text-lg font-semibold text-slate-600 flex items-center gap-2">
-                                    <Calendar size={20} className="text-pink-300" />
-                                    Calendario de Envíos
+                                    <Calendar size={20} className="text-pink-300" /> Calendario de Envíos
                                 </h2>
                                 {filtroFecha && (
-                                    <button
-                                        onClick={() => setFiltroFecha('')}
-                                        className="text-[10px] md:text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-bold"
-                                    >
-                                        Mostrar todos
-                                    </button>
+                                    <button onClick={() => setFiltroFecha('')} className="text-[10px] md:text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-bold">Mostrar todos</button>
                                 )}
                             </div>
                             <div className="bg-white border border-pink-100 p-3 md:p-4 rounded-2xl shadow-sm">
-                                <CalendarioWidget
-                                    fechasConGrupos={fechasConGrupos}
-                                    fechaSeleccionada={filtroFecha}
-                                    setFechaSeleccionada={setFiltroFecha}
-                                />
+                                <CalendarioWidget fechasActivas={fechasActivas} fechaSeleccionada={filtroFecha} setFechaSeleccionada={setFiltroFecha} />
                             </div>
                         </div>
 
-                        {/* Formulario Nuevo Grupo */}
+                        {/* PANEL DE REGISTRO (GRUPOS O SUELTOS) */}
                         <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100">
-                            <h2 className="text-base md:text-lg font-semibold text-slate-600 mb-4 flex items-center gap-2">
-                                <Package size={20} className="text-pink-300" />
-                                Nuevo Grupo de Envío
-                            </h2>
-                            <form onSubmit={agregarGrupo} className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 ml-2">Fecha del pedido</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        value={nuevaFecha}
-                                        onChange={(e) => setNuevaFecha(e.target.value)}
-                                        className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
-                                    />
-                                </div>
-                                <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder="Costo Total Envío (₲)"
-                                    required
-                                    value={nuevoCostoEnvio}
-                                    onChange={(e) => setNuevoCostoEnvio(formatearGuaranies(e.target.value))}
-                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
-                                />
-                                <input
-                                    type="number"
-                                    placeholder="Peso Total Envío (kg)"
-                                    step="0.01"
-                                    required
-                                    value={nuevoPesoTotal}
-                                    onChange={(e) => setNuevoPesoTotal(e.target.value)}
-                                    className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200"
-                                />
-                                <button type="submit" className="w-full bg-pink-200 hover:bg-pink-300 text-pink-800 font-bold py-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95">
-                                    <Plus size={22} /> Crear Grupo
-                                </button>
-                            </form>
-                        </div>
 
-                        <div className="hidden lg:flex bg-white p-4 rounded-2xl border border-pink-100 text-pink-400 text-xs gap-3 shadow-sm">
-                            <Info className="shrink-0" size={18} />
-                            <p>Las ganancias se calculan sumando el costo base y envío, dividido por la cantidad de items.</p>
+                            <div className="flex bg-pink-50 p-1.5 rounded-xl mb-5">
+                                <button
+                                    onClick={() => setModoRegistro('grupo')}
+                                    className={`flex-1 py-2 rounded-lg text-xs md:text-sm font-bold transition-all flex items-center justify-center gap-2 ${modoRegistro === 'grupo' ? 'bg-white shadow-sm text-pink-600' : 'text-pink-400 hover:text-pink-500'}`}
+                                >
+                                    <Package size={16}/> Grupo
+                                </button>
+                                <button
+                                    onClick={() => setModoRegistro('individual')}
+                                    className={`flex-1 py-2 rounded-lg text-xs md:text-sm font-bold transition-all flex items-center justify-center gap-2 ${modoRegistro === 'individual' ? 'bg-white shadow-sm text-purple-600' : 'text-pink-400 hover:text-pink-500'}`}
+                                >
+                                    <ShoppingBag size={16}/> Sueltos
+                                </button>
+                            </div>
+
+                            {modoRegistro === 'grupo' ? (
+                                <form onSubmit={agregarGrupo} className="space-y-4">
+                                    <div className="bg-pink-50/50 p-3 rounded-2xl border border-pink-100 mb-4">
+                                        <p className="text-[11px] text-pink-600 font-medium text-center">Usa esta opción si pagaste un flete/envío por peso para traer varios artículos juntos.</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 ml-2">Fecha del pedido</label>
+                                        <input type="date" required value={nuevaFecha} onChange={(e) => setNuevaFecha(e.target.value)} className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200" />
+                                    </div>
+                                    <input type="text" inputMode="numeric" placeholder="Costo Total Envío (₲)" required value={nuevoCostoEnvio} onChange={(e) => setNuevoCostoEnvio(formatearGuaranies(e.target.value))} className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200" />
+                                    <input type="number" placeholder="Peso Total Envío (kg)" step="0.01" required value={nuevoPesoTotal} onChange={(e) => setNuevoPesoTotal(e.target.value)} className="w-full px-4 py-3 bg-pink-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-pink-200" />
+                                    <button type="submit" className="w-full bg-pink-200 hover:bg-pink-300 text-pink-800 font-bold py-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95">
+                                        <Plus size={22} /> Crear Grupo
+                                    </button>
+                                </form>
+                            ) : (
+                                <form onSubmit={agregarProductoInd} className="space-y-4">
+                                    <div className="bg-purple-50/50 p-3 rounded-2xl border border-purple-100 mb-4">
+                                        <p className="text-[11px] text-purple-600 font-medium text-center">Compras directas sin envío por peso. Ideal para ventas rápidas locales.</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 ml-2">Fecha de compra</label>
+                                        <input type="date" required value={indFecha} onChange={(e) => setIndFecha(e.target.value)} className="w-full px-4 py-3 bg-purple-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-purple-200" />
+                                    </div>
+                                    <input type="text" placeholder="Nombre del producto" required value={indNombre} onChange={(e) => setIndNombre(e.target.value)} className="w-full px-4 py-3 bg-purple-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-purple-200" />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input type="text" inputMode="numeric" placeholder="Costo c/u (₲)" required value={indCompra} onChange={(e) => setIndCompra(formatearGuaranies(e.target.value))} className="w-full px-4 py-3 bg-purple-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-purple-200" />
+                                        <input type="text" inputMode="numeric" placeholder="Venta c/u (₲)" required value={indVenta} onChange={(e) => setIndVenta(formatearGuaranies(e.target.value))} className="w-full px-4 py-3 bg-purple-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-purple-200" />
+                                    </div>
+                                    <input type="number" placeholder="Cantidad" min="1" required value={indCantidad} onChange={(e) => setIndCantidad(e.target.value)} className="w-full px-4 py-3 bg-purple-50 border-none rounded-2xl text-base outline-none text-slate-600 focus:ring-2 focus:ring-purple-200" />
+                                    <button type="submit" className="w-full bg-purple-200 hover:bg-purple-300 text-purple-800 font-bold py-4 rounded-2xl transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95">
+                                        <ShoppingBag size={20} /> Guardar Suelto
+                                    </button>
+                                </form>
+                            )}
+
                         </div>
                     </aside>
 
                     {/* Columna Principal */}
                     <main className="lg:col-span-8 space-y-5">
 
-                        {/* DASHBOARD DE RESUMEN DE VENTAS */}
-                        {!cargando && gruposFiltrados.length > 0 && (
+                        {/* DASHBOARD */}
+                        {!cargando && (gruposFiltrados.length > 0 || productosIndFiltrados.length > 0) && (
                             <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-pink-100 flex flex-col md:flex-row gap-5 justify-between items-center relative overflow-hidden">
                                 <div className="absolute top-0 left-0 w-2 h-full bg-pink-400"></div>
                                 <div>
@@ -652,328 +651,211 @@ export default function App() {
                                 <Loader2 className="animate-spin mb-4" size={40} />
                                 <p className="font-medium">Cargando tus datos...</p>
                             </div>
-                        ) : gruposFiltrados.length === 0 ? (
+                        ) : (gruposFiltrados.length === 0 && indPorFecha.length === 0) ? (
                             <div className="bg-white p-10 md:p-12 rounded-3xl text-center border border-dashed border-pink-200">
                                 <Package size={48} className="mx-auto text-pink-100 mb-4" />
-                                <p className="text-slate-400 font-medium">No hay envíos registrados para esta fecha.</p>
+                                <p className="text-slate-400 font-medium">No hay registros para esta fecha.</p>
                             </div>
-                        ) : gruposFiltrados.map(grupo => (
-                            <div key={grupo.id} className="bg-white rounded-3xl shadow-sm border border-pink-100 overflow-hidden transition-all hover:shadow-md flex flex-col">
-
-                                {/* Cabecera del Grupo */}
-                                {editandoGrupo === grupo.id ? (
-                                    // MODO EDICIÓN GRUPO
-                                    <div className="bg-pink-100 p-4 border-b border-pink-200">
-                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-                                            <input
-                                                type="date"
-                                                className="w-full px-3 py-2 bg-white border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600 shadow-sm"
-                                                value={grupoEditado.fecha}
-                                                onChange={(e) => setGrupoEditado({...grupoEditado, fecha: e.target.value})}
-                                            />
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                placeholder="Envío total (₲)"
-                                                className="w-full px-3 py-2 bg-white border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600 shadow-sm"
-                                                value={grupoEditado.costoEnvioTotal}
-                                                onChange={(e) => setGrupoEditado({...grupoEditado, costoEnvioTotal: formatearGuaranies(e.target.value)})}
-                                            />
-                                            <input
-                                                type="number"
-                                                placeholder="Peso total (kg)"
-                                                step="0.01"
-                                                className="w-full px-3 py-2 bg-white border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600 shadow-sm"
-                                                value={grupoEditado.pesoTotal}
-                                                onChange={(e) => setGrupoEditado({...grupoEditado, pesoTotal: e.target.value})}
-                                            />
-                                        </div>
-                                        <div className="flex justify-end gap-2">
-                                            <button onClick={() => setEditandoGrupo(null)} className="flex items-center gap-1 bg-white text-slate-500 px-3 py-1.5 rounded-xl border border-pink-200 hover:bg-slate-50 text-sm font-semibold transition-colors">
-                                                <X size={16} /> Cancelar
-                                            </button>
-                                            <button onClick={() => guardarEdicionGrupo(grupo.id)} className="flex items-center gap-1 bg-pink-400 text-white px-3 py-1.5 rounded-xl hover:bg-pink-500 text-sm font-semibold transition-colors shadow-sm">
-                                                <Check size={16} /> Guardar
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    // MODO VISTA GRUPO
-                                    <div className="bg-pink-100 p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-pink-200">
-                                        <div className="flex items-center gap-2 text-pink-800">
-                                            <Calendar size={18} className="text-pink-400 shrink-0" />
-                                            <span className="font-bold text-base md:text-lg">{new Date(grupo.fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
-                                        </div>
-                                        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
-                                            <div className="bg-white px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-pink-200 shadow-sm flex-1 sm:flex-none text-center mr-1">
-                        <span className="text-pink-700 text-xs md:text-sm font-bold block">
-                          ₲{grupo.costoEnvioTotal.toLocaleString()} | {grupo.pesoTotal}kg
-                        </span>
+                        ) : (
+                            <>
+                                {/* RENDERIZAR PRODUCTOS SUELTOS (POR FECHA) */}
+                                {indPorFecha.map(([fecha, productos]) => (
+                                    <div key={`ind-${fecha}`} className="bg-white rounded-3xl shadow-sm border border-purple-100 overflow-hidden transition-all flex flex-col">
+                                        <div className="bg-purple-100 p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-purple-200">
+                                            <div className="flex items-center gap-2 text-purple-800">
+                                                <ShoppingBag size={18} className="text-purple-500 shrink-0" />
+                                                <span className="font-bold text-base md:text-lg">Sueltos del {new Date(fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
                                             </div>
-                                            <button
-                                                onClick={() => iniciarEdicionGrupo(grupo)}
-                                                className="bg-white p-2 rounded-full text-pink-300 hover:text-blue-500 hover:bg-blue-50 border border-pink-100 shadow-sm transition-all shrink-0"
-                                                title="Editar grupo"
-                                            >
-                                                <Edit2 size={18} />
-                                            </button>
-                                            <button
-                                                onClick={() => borrarGrupo(grupo.id)}
-                                                className="bg-white p-2 rounded-full text-pink-300 hover:text-red-400 hover:bg-red-50 border border-pink-100 shadow-sm transition-all shrink-0"
-                                                title="Eliminar este grupo"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Formulario de Producto Nuevo (Con autoajuste cruzado) */}
-                                <div className="p-3 md:p-5 bg-pink-50/30 border-b border-pink-100">
-                                    <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
-                                        <div className="col-span-2 sm:col-span-5">
-                                            <input
-                                                placeholder="Nombre del producto"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
-                                                value={productoFormulario[grupo.id]?.nombre || ''}
-                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'nombre', e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 sm:col-span-3">
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                placeholder="Costo Compra Total (₲)"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
-                                                value={productoFormulario[grupo.id]?.precio || ''}
-                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'precio', e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 sm:col-span-2">
-                                            <input
-                                                type="number"
-                                                placeholder="Peso Total (kg)"
-                                                step="0.001"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
-                                                value={productoFormulario[grupo.id]?.peso || ''}
-                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'peso', e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 sm:col-span-2">
-                                            <input
-                                                type="number"
-                                                placeholder="Cant."
-                                                min="1"
-                                                step="1"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm"
-                                                value={productoFormulario[grupo.id]?.cantidad || ''}
-                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'cantidad', e.target.value)}
-                                            />
                                         </div>
 
-                                        {/* Segunda Fila Formulario */}
-                                        <div className="col-span-1 sm:col-span-3">
-                                            <input
-                                                type="number"
-                                                placeholder="% Ganancia"
-                                                step="0.1"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-green-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-200 outline-none text-green-700 font-bold shadow-sm"
-                                                value={productoFormulario[grupo.id]?.ganancia || ''}
-                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'ganancia', e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 sm:col-span-4">
-                                            <input
-                                                type="text"
-                                                inputMode="numeric"
-                                                placeholder="Precio Venta c/u (₲)"
-                                                className="w-full px-3 py-3 md:px-4 bg-white border border-green-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-200 outline-none text-green-700 font-bold shadow-sm"
-                                                value={productoFormulario[grupo.id]?.precioVenta || ''}
-                                                onChange={(e) => cambiarProductoFormulario(grupo.id, 'precioVenta', e.target.value)}
-                                            />
-                                        </div>
+                                        <div className="p-3 md:p-5 space-y-3 bg-purple-50/20">
+                                            {productos.map(p => {
+                                                const cantidadItem = p.cantidad || 1;
+                                                const gananciaPorc = p.precioCompra > 0 ? (((p.precioVenta / p.precioCompra) - 1) * 100).toFixed(1) : 0;
 
-                                        <div className="col-span-2 sm:col-span-5">
-                                            <button type="submit" className="w-full py-3 h-full bg-pink-200 text-pink-800 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm font-bold gap-2">
-                                                <Plus size={20} className="sm:hidden" />
-                                                <span className="sm:hidden">Agregar Producto</span>
-                                                <Plus size={20} className="hidden sm:block" />
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-
-                                {/* Lista de Productos */}
-                                <div className="p-3 md:p-5 space-y-3 bg-slate-50/30">
-                                    {grupo.productos.length === 0 ? (
-                                        <p className="text-center text-pink-300 text-sm py-4 italic">No hay productos en este envío todavía.</p>
-                                    ) : grupo.productos.map(p => {
-                                        const cantidadItem = p.cantidad || 1;
-                                        const costoUnitario = p.costoRealFinal / cantidadItem;
-                                        const precioVentaUnitario = p.precioVentaUnitario || (costoUnitario * (1 + ((p.porcentajeGanancia || 0) / 100)));
-
-                                        // Calculamos la ganancia real para mostrarla en la etiqueta si se forzó el precio
-                                        const gananciaReal = p.precioVentaUnitario && costoUnitario > 0 ? (((p.precioVentaUnitario / costoUnitario) - 1) * 100).toFixed(1) : (p.porcentajeGanancia || 0);
-
-                                        return (
-                                            <div key={p.id} className={`bg-white border shadow-sm p-4 rounded-2xl group transition-all ${p.vendido ? 'border-green-200 bg-green-50/10 opacity-90' : 'border-pink-100 hover:border-pink-200'}`}>
-                                                {editandoProducto === p.id ? (
-                                                    // MODO EDICIÓN PRODUCTO
-                                                    <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
-                                                        <div className="col-span-2 sm:col-span-5">
-                                                            <input
-                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
-                                                                value={productoEditado.nombre}
-                                                                onChange={(e) => handleEdicionInteligente('nombre', e.target.value, grupo)}
-                                                                placeholder="Nombre"
-                                                            />
-                                                        </div>
-                                                        <div className="col-span-1 sm:col-span-3">
-                                                            <input
-                                                                type="text"
-                                                                inputMode="numeric"
-                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
-                                                                value={productoEditado.precio}
-                                                                onChange={(e) => handleEdicionInteligente('precio', e.target.value, grupo)}
-                                                                placeholder="Compra Total (₲)"
-                                                            />
-                                                        </div>
-                                                        <div className="col-span-1 sm:col-span-2">
-                                                            <input
-                                                                type="number"
-                                                                step="0.001"
-                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
-                                                                value={productoEditado.peso}
-                                                                onChange={(e) => handleEdicionInteligente('peso', e.target.value, grupo)}
-                                                                placeholder="Peso Total"
-                                                            />
-                                                        </div>
-                                                        <div className="col-span-1 sm:col-span-2">
-                                                            <input
-                                                                type="number"
-                                                                min="1"
-                                                                step="1"
-                                                                className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600"
-                                                                value={productoEditado.cantidad}
-                                                                onChange={(e) => handleEdicionInteligente('cantidad', e.target.value, grupo)}
-                                                                placeholder="Cant."
-                                                            />
-                                                        </div>
-                                                        <div className="col-span-1 sm:col-span-3">
-                                                            <input
-                                                                type="number"
-                                                                step="0.1"
-                                                                className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-300 outline-none text-green-700 font-bold"
-                                                                value={productoEditado.ganancia}
-                                                                onChange={(e) => handleEdicionInteligente('ganancia', e.target.value, grupo)}
-                                                                placeholder="% Ganancia"
-                                                            />
-                                                        </div>
-                                                        <div className="col-span-1 sm:col-span-4">
-                                                            <input
-                                                                type="text"
-                                                                inputMode="numeric"
-                                                                className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-300 outline-none text-green-700 font-bold"
-                                                                value={productoEditado.precioVenta}
-                                                                onChange={(e) => handleEdicionInteligente('precioVenta', e.target.value, grupo)}
-                                                                placeholder="Venta c/u (₲)"
-                                                            />
-                                                        </div>
-                                                        <div className="col-span-2 sm:col-span-5 flex gap-1 justify-end items-center mt-2 sm:mt-0">
-                                                            <button onClick={() => setEditandoProducto(null)} className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors flex-1 flex justify-center">
-                                                                <X size={18} />
-                                                            </button>
-                                                            <button onClick={() => guardarEdicionProducto(grupo.id, p.id)} className="p-2 bg-pink-400 text-white rounded-xl hover:bg-pink-500 transition-colors flex-1 flex justify-center shadow-sm">
-                                                                <Check size={18} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    // MODO VISTA PRODUCTO
-                                                    <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
-
-                                                        {/* Detalles del Producto */}
-                                                        <div className="flex-1 min-w-0 w-full">
-                                                            <div className="flex items-center gap-2">
-                                                                <p className={`font-bold text-base md:text-lg truncate ${p.vendido ? 'text-green-700' : 'text-slate-600'}`} title={p.nombre}>{p.nombre}</p>
-                                                                {cantidadItem > 1 && (
-                                                                    <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-bold shadow-sm">
-                                  x{cantidadItem}
-                                </span>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="flex flex-wrap gap-2 mt-2">
-                              <span className="text-[11px] md:text-xs bg-slate-50 px-2 py-1 rounded-md text-slate-500 font-medium border border-slate-100">
-                                ⚖️ Peso Total: {p.peso}kg
-                              </span>
-                                                                <span className="text-[11px] md:text-xs bg-blue-50 px-2 py-1 rounded-md text-blue-600 font-medium border border-blue-100">
-                                🏷️ Compra: ₲{p.precio.toLocaleString('es-PY')}
-                              </span>
-                                                                <span className="text-[11px] md:text-xs bg-orange-50 px-2 py-1 rounded-md text-orange-600 font-medium border border-orange-100">
-                                ✈️ Envío: ₲{Math.round(p.costoEnvioCalculado || 0).toLocaleString('es-PY')}
-                              </span>
-                                                                {gananciaReal > 0 && (
-                                                                    <span className="text-[11px] md:text-xs bg-green-50 px-2 py-1 rounded-md text-green-600 font-medium border border-green-100">
-                                  📈 Ganancia: {gananciaReal}%
-                                </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Mini-Dashboard de Resultados Reales y Venta */}
-                                                        <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 w-full lg:w-auto mt-2 lg:mt-0">
-
-                                                            <div className="bg-slate-50 p-2 md:p-3 rounded-xl border border-slate-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
-                                                                <p className="text-[9px] uppercase font-bold text-slate-400">Total Invertido</p>
-                                                                <p className="text-sm font-bold text-slate-600">₲{Math.round(p.costoRealFinal).toLocaleString('es-PY')}</p>
-                                                            </div>
-
-                                                            <div className="bg-pink-50 p-2 md:p-3 rounded-xl border border-pink-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
-                                                                <p className="text-[9px] uppercase font-bold text-pink-400">Costo c/u</p>
-                                                                <p className="text-sm md:text-base font-bold text-pink-600">₲{Math.round(costoUnitario).toLocaleString('es-PY')}</p>
-                                                            </div>
-
-                                                            <div className="bg-green-50 p-2 md:p-3 rounded-xl border border-green-200 text-center flex-1 min-w-[100px] shadow-sm flex flex-col justify-center">
-                                                                <p className="text-[9px] md:text-[10px] uppercase font-bold text-green-500">Venta c/u</p>
-                                                                <p className="text-base md:text-xl font-black text-green-600">₲{Math.round(precioVentaUnitario).toLocaleString('es-PY')}</p>
-                                                            </div>
-
-                                                            {/* Botones de Acción (Stock, Edit, Delete) */}
-                                                            <div className="flex flex-row sm:flex-col gap-1 shrink-0 justify-center w-full sm:w-auto mt-2 sm:mt-0">
-                                                                <div className="flex gap-1 flex-1 sm:flex-none">
-                                                                    <button
-                                                                        onClick={() => iniciarEdicionProducto(p, grupo)}
-                                                                        className="flex-1 sm:flex-none flex justify-center text-pink-400 hover:text-blue-500 bg-white hover:bg-blue-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-pink-100 hover:border-blue-100"
-                                                                        title="Editar producto"
-                                                                    >
-                                                                        <Edit2 size={16} />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => borrarProducto(grupo.id, p.id)}
-                                                                        className="flex-1 sm:flex-none flex justify-center text-pink-400 hover:text-red-500 bg-white hover:bg-red-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-pink-100 hover:border-red-100"
-                                                                        title="Eliminar producto"
-                                                                    >
-                                                                        <Trash2 size={16} />
-                                                                    </button>
+                                                return (
+                                                    <div key={p.id} className={`bg-white border shadow-sm p-4 rounded-2xl group transition-all ${p.vendido ? 'border-green-200 bg-green-50/10 opacity-90' : 'border-purple-100 hover:border-purple-200'}`}>
+                                                        {editandoInd === p.id ? (
+                                                            // EDICION SUELTO
+                                                            <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
+                                                                <div className="col-span-2 sm:col-span-4">
+                                                                    <input className="w-full px-3 py-2 bg-purple-50 border border-purple-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-purple-300 outline-none text-slate-600" value={indEditado.nombre} onChange={(e) => setIndEditado({...indEditado, nombre: e.target.value})} placeholder="Nombre" />
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => toggleVendido(grupo.id, p.id)}
-                                                                    className={`flex-1 sm:flex-none flex items-center justify-center gap-1 p-2 rounded-xl transition-colors text-xs font-bold shadow-sm border
-                                  ${p.vendido ? 'bg-green-500 text-white border-green-600 hover:bg-green-600' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-green-500'}`}
-                                                                >
-                                                                    {p.vendido ? <><Check size={14}/> Vendido</> : '⏳ En Stock'}
-                                                                </button>
+                                                                <div className="col-span-1 sm:col-span-3">
+                                                                    <input type="text" inputMode="numeric" className="w-full px-3 py-2 bg-purple-50 border border-purple-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-purple-300 outline-none text-slate-600" value={indEditado.precioCompra} onChange={(e) => setIndEditado({...indEditado, precioCompra: formatearGuaranies(e.target.value)})} placeholder="Costo c/u" />
+                                                                </div>
+                                                                <div className="col-span-1 sm:col-span-3">
+                                                                    <input type="text" inputMode="numeric" className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-300 outline-none text-green-700 font-bold" value={indEditado.precioVenta} onChange={(e) => setIndEditado({...indEditado, precioVenta: formatearGuaranies(e.target.value)})} placeholder="Venta c/u" />
+                                                                </div>
+                                                                <div className="col-span-2 sm:col-span-2">
+                                                                    <input type="number" min="1" step="1" className="w-full px-3 py-2 bg-purple-50 border border-purple-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-purple-300 outline-none text-slate-600" value={indEditado.cantidad} onChange={(e) => setIndEditado({...indEditado, cantidad: e.target.value})} placeholder="Cant." />
+                                                                </div>
+                                                                <div className="col-span-2 sm:col-span-12 flex gap-1 justify-end items-center mt-2 sm:mt-0">
+                                                                    <button onClick={() => setEditandoInd(null)} className="px-4 py-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors flex justify-center"><X size={18} /></button>
+                                                                    <button onClick={() => guardarEdicionInd(p.id)} className="px-4 py-2 bg-purple-400 text-white rounded-xl hover:bg-purple-500 transition-colors flex justify-center shadow-sm"><Check size={18} /></button>
+                                                                </div>
                                                             </div>
-
-                                                        </div>
+                                                        ) : (
+                                                            // VISTA SUELTO
+                                                            <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+                                                                <div className="flex-1 min-w-0 w-full">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <p className={`font-bold text-base md:text-lg truncate ${p.vendido ? 'text-green-700' : 'text-slate-600'}`} title={p.nombre}>{p.nombre}</p>
+                                                                        {cantidadItem > 1 && <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-bold shadow-sm">x{cantidadItem}</span>}
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-2 mt-2">
+                                                                        <span className="text-[11px] md:text-xs bg-purple-50 px-2 py-1 rounded-md text-purple-600 font-medium border border-purple-100">🛍️ Compra Directa</span>
+                                                                        {gananciaPorc > 0 && <span className="text-[11px] md:text-xs bg-green-50 px-2 py-1 rounded-md text-green-600 font-medium border border-green-100">📈 Ganancia: {gananciaPorc}%</span>}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 w-full lg:w-auto mt-2 lg:mt-0">
+                                                                    <div className="bg-slate-50 p-2 md:p-3 rounded-xl border border-slate-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
+                                                                        <p className="text-[9px] uppercase font-bold text-slate-400">Inversión c/u</p>
+                                                                        <p className="text-sm font-bold text-slate-600">₲{p.precioCompra.toLocaleString('es-PY')}</p>
+                                                                    </div>
+                                                                    <div className="bg-green-50 p-2 md:p-3 rounded-xl border border-green-200 text-center flex-1 min-w-[100px] shadow-sm flex flex-col justify-center">
+                                                                        <p className="text-[9px] md:text-[10px] uppercase font-bold text-green-500">Venta c/u</p>
+                                                                        <p className="text-base md:text-xl font-black text-green-600">₲{p.precioVenta.toLocaleString('es-PY')}</p>
+                                                                    </div>
+                                                                    <div className="flex flex-row sm:flex-col gap-1 shrink-0 justify-center w-full sm:w-auto mt-2 sm:mt-0">
+                                                                        <div className="flex gap-1 flex-1 sm:flex-none">
+                                                                            <button onClick={() => iniciarEdicionInd(p)} className="flex-1 sm:flex-none flex justify-center text-purple-400 hover:text-blue-500 bg-white hover:bg-blue-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-purple-100 hover:border-blue-100"><Edit2 size={16} /></button>
+                                                                            <button onClick={() => borrarProductoInd(p.id)} className="flex-1 sm:flex-none flex justify-center text-purple-400 hover:text-red-500 bg-white hover:bg-red-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-purple-100 hover:border-red-100"><Trash2 size={16} /></button>
+                                                                        </div>
+                                                                        <button onClick={() => toggleVendidoInd(p.id, p.vendido)} className={`flex-1 sm:flex-none flex items-center justify-center gap-1 p-2 rounded-xl transition-colors text-xs font-bold shadow-sm border ${p.vendido ? 'bg-green-500 text-white border-green-600 hover:bg-green-600' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-green-500'}`}>
+                                                                            {p.vendido ? <><Check size={14}/> Vendido</> : '⏳ En Stock'}
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                )}
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {/* RENDERIZAR GRUPOS (Tu lógica original) */}
+                                {gruposFiltrados.map(grupo => (
+                                    <div key={grupo.id} className="bg-white rounded-3xl shadow-sm border border-pink-100 overflow-hidden transition-all hover:shadow-md flex flex-col">
+                                        {/* Cabecera del Grupo */}
+                                        {editandoGrupo === grupo.id ? (
+                                            // MODO EDICIÓN GRUPO
+                                            <div className="bg-pink-100 p-4 border-b border-pink-200">
+                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                                                    <input type="date" className="w-full px-3 py-2 bg-white border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600 shadow-sm" value={grupoEditado.fecha} onChange={(e) => setGrupoEditado({...grupoEditado, fecha: e.target.value})} />
+                                                    <input type="text" inputMode="numeric" placeholder="Envío total (₲)" className="w-full px-3 py-2 bg-white border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600 shadow-sm" value={grupoEditado.costoEnvioTotal} onChange={(e) => setGrupoEditado({...grupoEditado, costoEnvioTotal: formatearGuaranies(e.target.value)})} />
+                                                    <input type="number" placeholder="Peso total (kg)" step="0.01" className="w-full px-3 py-2 bg-white border border-pink-200 rounded-xl text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600 shadow-sm" value={grupoEditado.pesoTotal} onChange={(e) => setGrupoEditado({...grupoEditado, pesoTotal: e.target.value})} />
+                                                </div>
+                                                <div className="flex justify-end gap-2">
+                                                    <button onClick={() => setEditandoGrupo(null)} className="flex items-center gap-1 bg-white text-slate-500 px-3 py-1.5 rounded-xl border border-pink-200 hover:bg-slate-50 text-sm font-semibold transition-colors"><X size={16} /> Cancelar</button>
+                                                    <button onClick={() => guardarEdicionGrupo(grupo.id)} className="flex items-center gap-1 bg-pink-400 text-white px-3 py-1.5 rounded-xl hover:bg-pink-500 text-sm font-semibold transition-colors shadow-sm"><Check size={16} /> Guardar</button>
+                                                </div>
                                             </div>
-                                        )})}
-                                </div>
-                            </div>
-                        ))}
+                                        ) : (
+                                            // MODO VISTA GRUPO
+                                            <div className="bg-pink-100 p-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-pink-200">
+                                                <div className="flex items-center gap-2 text-pink-800">
+                                                    <Calendar size={18} className="text-pink-400 shrink-0" />
+                                                    <span className="font-bold text-base md:text-lg">Envío Grupal del {new Date(grupo.fecha).toLocaleDateString('es-PY', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+                                                    <div className="bg-white px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-pink-200 shadow-sm flex-1 sm:flex-none text-center mr-1">
+                                                        <span className="text-pink-700 text-xs md:text-sm font-bold block">₲{grupo.costoEnvioTotal.toLocaleString()} | {grupo.pesoTotal}kg</span>
+                                                    </div>
+                                                    <button onClick={() => iniciarEdicionGrupo(grupo)} className="bg-white p-2 rounded-full text-pink-300 hover:text-blue-500 hover:bg-blue-50 border border-pink-100 shadow-sm transition-all shrink-0"><Edit2 size={18} /></button>
+                                                    <button onClick={() => borrarGrupo(grupo.id)} className="bg-white p-2 rounded-full text-pink-300 hover:text-red-400 hover:bg-red-50 border border-pink-100 shadow-sm transition-all shrink-0"><Trash2 size={18} /></button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Formulario de Producto Nuevo Grupal */}
+                                        <div className="p-3 md:p-5 bg-pink-50/30 border-b border-pink-100">
+                                            <form onSubmit={(e) => agregarProducto(grupo.id, e)} className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
+                                                <div className="col-span-2 sm:col-span-5"><input placeholder="Nombre del producto" className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm" value={productoFormulario[grupo.id]?.nombre || ''} onChange={(e) => cambiarProductoFormulario(grupo.id, 'nombre', e.target.value)} /></div>
+                                                <div className="col-span-1 sm:col-span-3"><input type="text" inputMode="numeric" placeholder="Compra Total (₲)" className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm" value={productoFormulario[grupo.id]?.precio || ''} onChange={(e) => cambiarProductoFormulario(grupo.id, 'precio', e.target.value)} /></div>
+                                                <div className="col-span-1 sm:col-span-2"><input type="number" placeholder="Peso (kg)" step="0.001" className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm" value={productoFormulario[grupo.id]?.peso || ''} onChange={(e) => cambiarProductoFormulario(grupo.id, 'peso', e.target.value)} /></div>
+                                                <div className="col-span-1 sm:col-span-2"><input type="number" placeholder="Cant." min="1" step="1" className="w-full px-3 py-3 md:px-4 bg-white border border-pink-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-200 outline-none text-slate-600 shadow-sm" value={productoFormulario[grupo.id]?.cantidad || ''} onChange={(e) => cambiarProductoFormulario(grupo.id, 'cantidad', e.target.value)} /></div>
+                                                <div className="col-span-1 sm:col-span-3"><input type="number" placeholder="% Ganancia" step="0.1" className="w-full px-3 py-3 md:px-4 bg-white border border-green-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-200 outline-none text-green-700 font-bold shadow-sm" value={productoFormulario[grupo.id]?.ganancia || ''} onChange={(e) => cambiarProductoFormulario(grupo.id, 'ganancia', e.target.value)} /></div>
+                                                <div className="col-span-1 sm:col-span-4"><input type="text" inputMode="numeric" placeholder="Venta c/u (₲)" className="w-full px-3 py-3 md:px-4 bg-white border border-green-100 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-200 outline-none text-green-700 font-bold shadow-sm" value={productoFormulario[grupo.id]?.precioVenta || ''} onChange={(e) => cambiarProductoFormulario(grupo.id, 'precioVenta', e.target.value)} /></div>
+                                                <div className="col-span-2 sm:col-span-5"><button type="submit" className="w-full py-3 h-full bg-pink-200 text-pink-800 rounded-xl hover:bg-pink-300 transition-colors flex justify-center items-center shadow-sm font-bold gap-2"><Plus size={20} className="sm:hidden" /><span className="sm:hidden">Agregar Producto</span><Plus size={20} className="hidden sm:block" /></button></div>
+                                            </form>
+                                        </div>
+
+                                        {/* Lista de Productos del Grupo */}
+                                        <div className="p-3 md:p-5 space-y-3 bg-slate-50/30">
+                                            {grupo.productos.length === 0 ? (
+                                                <p className="text-center text-pink-300 text-sm py-4 italic">No hay productos en este envío todavía.</p>
+                                            ) : grupo.productos.map(p => {
+                                                const cantidadItem = p.cantidad || 1;
+                                                const costoUnitario = p.costoRealFinal / cantidadItem;
+                                                const precioVentaUnitario = p.precioVentaUnitario || (costoUnitario * (1 + ((p.porcentajeGanancia || 0) / 100)));
+                                                const gananciaReal = p.precioVentaUnitario && costoUnitario > 0 ? (((p.precioVentaUnitario / costoUnitario) - 1) * 100).toFixed(1) : (p.porcentajeGanancia || 0);
+
+                                                return (
+                                                    <div key={p.id} className={`bg-white border shadow-sm p-4 rounded-2xl group transition-all ${p.vendido ? 'border-green-200 bg-green-50/10 opacity-90' : 'border-pink-100 hover:border-pink-200'}`}>
+                                                        {editandoProducto === p.id ? (
+                                                            // MODO EDICIÓN PRODUCTO GRUPAL
+                                                            <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-3">
+                                                                <div className="col-span-2 sm:col-span-5"><input className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600" value={productoEditado.nombre} onChange={(e) => handleEdicionInteligente('nombre', e.target.value, grupo)} placeholder="Nombre" /></div>
+                                                                <div className="col-span-1 sm:col-span-3"><input type="text" inputMode="numeric" className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600" value={productoEditado.precio} onChange={(e) => handleEdicionInteligente('precio', e.target.value, grupo)} placeholder="Compra Total (₲)" /></div>
+                                                                <div className="col-span-1 sm:col-span-2"><input type="number" step="0.001" className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600" value={productoEditado.peso} onChange={(e) => handleEdicionInteligente('peso', e.target.value, grupo)} placeholder="Peso Total" /></div>
+                                                                <div className="col-span-1 sm:col-span-2"><input type="number" min="1" step="1" className="w-full px-3 py-2 bg-pink-50 border border-pink-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-pink-300 outline-none text-slate-600" value={productoEditado.cantidad} onChange={(e) => handleEdicionInteligente('cantidad', e.target.value, grupo)} placeholder="Cant." /></div>
+                                                                <div className="col-span-1 sm:col-span-3"><input type="number" step="0.1" className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-300 outline-none text-green-700 font-bold" value={productoEditado.ganancia} onChange={(e) => handleEdicionInteligente('ganancia', e.target.value, grupo)} placeholder="% Ganancia" /></div>
+                                                                <div className="col-span-1 sm:col-span-4"><input type="text" inputMode="numeric" className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-green-300 outline-none text-green-700 font-bold" value={productoEditado.precioVenta} onChange={(e) => handleEdicionInteligente('precioVenta', e.target.value, grupo)} placeholder="Venta c/u (₲)" /></div>
+                                                                <div className="col-span-2 sm:col-span-5 flex gap-1 justify-end items-center mt-2 sm:mt-0">
+                                                                    <button onClick={() => setEditandoProducto(null)} className="p-2 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-colors flex-1 flex justify-center"><X size={18} /></button>
+                                                                    <button onClick={() => guardarEdicionProducto(grupo.id, p.id)} className="p-2 bg-pink-400 text-white rounded-xl hover:bg-pink-500 transition-colors flex-1 flex justify-center shadow-sm"><Check size={18} /></button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            // MODO VISTA PRODUCTO GRUPAL
+                                                            <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+                                                                <div className="flex-1 min-w-0 w-full">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <p className={`font-bold text-base md:text-lg truncate ${p.vendido ? 'text-green-700' : 'text-slate-600'}`} title={p.nombre}>{p.nombre}</p>
+                                                                        {cantidadItem > 1 && <span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-bold shadow-sm">x{cantidadItem}</span>}
+                                                                    </div>
+                                                                    <div className="flex flex-wrap gap-2 mt-2">
+                                                                        <span className="text-[11px] md:text-xs bg-slate-50 px-2 py-1 rounded-md text-slate-500 font-medium border border-slate-100">⚖️ Peso Total: {p.peso}kg</span>
+                                                                        <span className="text-[11px] md:text-xs bg-blue-50 px-2 py-1 rounded-md text-blue-600 font-medium border border-blue-100">🏷️ Compra: ₲{p.precio.toLocaleString('es-PY')}</span>
+                                                                        <span className="text-[11px] md:text-xs bg-orange-50 px-2 py-1 rounded-md text-orange-600 font-medium border border-orange-100">✈️ Envío: ₲{Math.round(p.costoEnvioCalculado || 0).toLocaleString('es-PY')}</span>
+                                                                        {gananciaReal > 0 && <span className="text-[11px] md:text-xs bg-green-50 px-2 py-1 rounded-md text-green-600 font-medium border border-green-100">📈 Ganancia: {gananciaReal}%</span>}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 w-full lg:w-auto mt-2 lg:mt-0">
+                                                                    <div className="bg-slate-50 p-2 md:p-3 rounded-xl border border-slate-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
+                                                                        <p className="text-[9px] uppercase font-bold text-slate-400">Total Invertido</p>
+                                                                        <p className="text-sm font-bold text-slate-600">₲{Math.round(p.costoRealFinal).toLocaleString('es-PY')}</p>
+                                                                    </div>
+                                                                    <div className="bg-pink-50 p-2 md:p-3 rounded-xl border border-pink-100 text-center flex-1 min-w-[90px] flex flex-col justify-center">
+                                                                        <p className="text-[9px] uppercase font-bold text-pink-400">Costo c/u</p>
+                                                                        <p className="text-sm md:text-base font-bold text-pink-600">₲{Math.round(costoUnitario).toLocaleString('es-PY')}</p>
+                                                                    </div>
+                                                                    <div className="bg-green-50 p-2 md:p-3 rounded-xl border border-green-200 text-center flex-1 min-w-[100px] shadow-sm flex flex-col justify-center">
+                                                                        <p className="text-[9px] md:text-[10px] uppercase font-bold text-green-500">Venta c/u</p>
+                                                                        <p className="text-base md:text-xl font-black text-green-600">₲{Math.round(precioVentaUnitario).toLocaleString('es-PY')}</p>
+                                                                    </div>
+                                                                    <div className="flex flex-row sm:flex-col gap-1 shrink-0 justify-center w-full sm:w-auto mt-2 sm:mt-0">
+                                                                        <div className="flex gap-1 flex-1 sm:flex-none">
+                                                                            <button onClick={() => iniciarEdicionProducto(p, grupo)} className="flex-1 sm:flex-none flex justify-center text-pink-400 hover:text-blue-500 bg-white hover:bg-blue-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-pink-100 hover:border-blue-100"><Edit2 size={16} /></button>
+                                                                            <button onClick={() => borrarProducto(grupo.id, p.id)} className="flex-1 sm:flex-none flex justify-center text-pink-400 hover:text-red-500 bg-white hover:bg-red-50 rounded-lg sm:rounded-xl p-2 transition-colors border border-pink-100 hover:border-red-100"><Trash2 size={16} /></button>
+                                                                        </div>
+                                                                        <button onClick={() => toggleVendido(grupo.id, p.id)} className={`flex-1 sm:flex-none flex items-center justify-center gap-1 p-2 rounded-xl transition-colors text-xs font-bold shadow-sm border ${p.vendido ? 'bg-green-500 text-white border-green-600 hover:bg-green-600' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-green-500'}`}>
+                                                                            {p.vendido ? <><Check size={14}/> Vendido</> : '⏳ En Stock'}
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )})}
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
+                        )}
                     </main>
                 </div>
             </div>
